@@ -194,11 +194,17 @@ def main() -> int:
                 print(f"  {c.start:7.1f}s -> {c.end:7.1f}s  {c.name}  "
                       f"[{format_segment_stats(c)}]")
             return 0
+        from segment_detector import format_segment_stats
+        print(f"Rendering {len(clips)} segment(s):", file=sys.stderr)
+        for c in clips:
+            print(f"  {c.start:7.1f}s -> {c.end:7.1f}s  {c.name}  "
+                  f"[{format_segment_stats(c)}]", file=sys.stderr)
         from video_editor import build_segment_reel
         from intro_generator import build_final_video
         reel = build_segment_reel(args.video, clips, args.music, cfg,
                                   gpx=gpx, offset_seconds=r.offset_used)
         try:
+            print("Intro + eindmontage renderen…", file=sys.stderr)
             build_final_video(reel, gpx, cfg, args.output, args)
         finally:
             import os, shutil
@@ -220,6 +226,7 @@ def main() -> int:
     from intro_generator import build_final_video
     reel = build_highlight_reel(args.video, segments, args.music, cfg)
     try:
+        print("Intro + eindmontage renderen…", file=sys.stderr)
         build_final_video(reel, gpx, cfg, args.output, args)
     finally:
         import os, shutil

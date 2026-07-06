@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from config import Config
@@ -10,6 +11,11 @@ from highlight_detector import Segment
 from segment_detector import format_segment_stats
 from telemetry import sample_telemetry
 import hud_renderer
+
+
+def _log(msg, end="\n"):
+    """Emit a progress line to stderr (keeps stdout/pipes clean)."""
+    print(msg, end=end, file=sys.stderr, flush=True)
 
 
 def _escape_drawtext(text: str) -> str:
@@ -84,6 +90,7 @@ def _concat_and_music(part_paths, music_path, reel_duration, workdir, cfg: Confi
         for p in part_paths:
             f.write(f"file '{p}'\n")
     reel = os.path.join(workdir, "reel.mp4")
+    _log("Segmenten samenvoegen…")
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
          "-c", "copy", reel],
@@ -92,6 +99,7 @@ def _concat_and_music(part_paths, music_path, reel_duration, workdir, cfg: Confi
     if not music_path:
         return reel
     mixed = os.path.join(workdir, "reel_music.mp4")
+    _log("Muziek mixen…")
     filtergraph = _amix_filter(cfg, has_music=True, reel_duration=reel_duration)
     subprocess.run(
         ["ffmpeg", "-y", "-i", reel, "-i", music_path,
@@ -108,7 +116,9 @@ def build_highlight_reel(video_path, segments, music_path, cfg: Config) -> str:
     check_ffmpeg()
     workdir = tempfile.mkdtemp(prefix="rhe_")
     part_paths = []
+    n = len(segments)
     for i, seg in enumerate(segments):
+        _log(f"[{i + 1}/{n}] segment {seg.start:.0f}-{seg.end:.0f}s knippen…")
         part = os.path.join(workdir, f"part_{i:03d}.mp4")
         _cut_segment(video_path, seg, part, cfg)
         part_paths.append(part)
@@ -142,6 +152,9 @@ def _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg):
         frame = hud_renderer.render_hud_frame(
             sample, clip.name, seg_coords, (W, H), cfg, date_str)
         frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
+        if i % 5 == 0 or i == n_frames - 1:
+            _log(f"\r        frames {i + 1}/{n_frames} ({(i + 1) * 100 // n_frames}%)", end="")
+    _log("")  # end the \r progress line
     return os.path.join(hud_dir, "hud_%06d.png")
 
 
@@ -161,12 +174,15 @@ def build_segment_reel(video_path, clips, music_path, cfg: Config,
     workdir = tempfile.mkdtemp(prefix="rhe_seg_")
     part_paths = []
     use_hud = cfg.hud_enabled and gpx is not None
+    n = len(clips)
     for i, clip in enumerate(clips):
         part = os.path.join(workdir, f"seg_{i:03d}.mp4")
         dur = clip.end - clip.start
         if use_hud:
+            _log(f"[{i + 1}/{n}] {clip.name} ({dur:.1f}s) — HUD-frames renderen…")
             try:
                 pattern = _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg)
+                _log(f"[{i + 1}/{n}] {clip.name} — overlay encoderen…")
                 subprocess.run(
                     ["ffmpeg", "-y", "-ss", str(clip.start), "-t", str(dur), "-i", video_path,
                      "-framerate", str(cfg.hud_fps), "-i", pattern,
@@ -179,6 +195,7 @@ def build_segment_reel(video_path, clips, music_path, cfg: Config,
             except Exception as e:
                 print(f"[warn] HUD render failed ({e}); falling back to lower-third.")
         # fallback / hud disabled: lower-third band
+        _log(f"[{i + 1}/{n}] {clip.name} — lower-third…")
         stats = format_segment_stats(clip)
         vf = _lower_third_filter(clip.name, stats, cfg)
         subprocess.run(
