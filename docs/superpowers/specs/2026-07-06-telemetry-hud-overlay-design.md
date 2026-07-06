@@ -42,7 +42,8 @@ speed, slope, distance computed) except the segment name (from Strava).
 - **Top-right:** elevation (m) + slope (%) accent panels.
 - **Bottom-right:** speedometer (arc + number, km/h, full-scale 45).
 - **Bottom-left:** segment minimap (polyline from the segment's GPX lat/lon) with a
-  moving position dot, + distance-within-segment (km) + ride date.
+  moving position dot, + distance-within-segment (km) + ride date including the year
+  (format `DD-MM-YYYY`).
 
 ## Data flow
 
