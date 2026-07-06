@@ -263,7 +263,7 @@ def compute_optical_flow_per_second(video_path: str, cfg: Config) -> list[float]
 def detect_highlights(video_path: str, gpx: GpxData, cfg: Config):
     """Sync GPS to video, run optical flow, score, and merge into segments."""
     a = analyze_video(video_path, gpx, cfg)
-    return a.segments, a.scores
+    return a.segments, a.scores  # thin wrapper over analyze_video
 
 
 def _pearson(a: np.ndarray, b: np.ndarray) -> float:
@@ -318,8 +318,9 @@ class Analysis:
     scores: list[float]
     segments: list[Segment]
     offset_used: float
-    offset_source: str            # "manual" | "auto" | "metadata" | "mtime"
+    offset_source: str            # "manual" | "auto" | "metadata" | "filename" | "mtime"
     metadata_offset: float
+    filename_offset: "float | None"
     auto_offset: float
     auto_correlation: float
     video_creation_time: datetime
@@ -342,28 +343,57 @@ def _resolve_offset(metadata_offset, from_metadata, filename_offset,
     return float(metadata_offset), "mtime"
 
 
-def analyze_video(video_path, gpx: GpxData, cfg: Config,
-                  offset_override=None, use_auto=False) -> Analysis:
-    """Compute flow once, resolve the sync offset, score, and merge.
+@dataclass
+class ResolvedOffset:
+    offset_used: float
+    offset_source: str
+    metadata_offset: float
+    filename_offset: "float | None"
+    auto_offset: float
+    auto_correlation: float
+    video_creation_time: datetime
+    from_metadata: bool
 
-    offset_override forces a manual offset; use_auto selects the cross-correlation
-    estimate; otherwise the creation_time/mtime offset is used.
-    """
+
+def resolve_sync_offset(video_path, gpx, cfg, offset_override=None,
+                        use_auto=False, flow=None) -> ResolvedOffset:
+    """Resolve the sync offset without computing optical flow unless auto is used."""
     video_start, from_metadata = get_video_creation_time(video_path)
     metadata_offset = compute_offset_seconds(video_start, gpx.start_time)
-    duration = int(round(get_video_duration(video_path)))
 
+    fname_dt = get_filename_timestamp(video_path)
+    filename_offset = (compute_offset_seconds(fname_dt, gpx.start_time)
+                       if fname_dt is not None else None)
+
+    auto_offset, auto_corr = 0.0, 0.0
+    if use_auto:
+        f = flow if flow is not None else compute_optical_flow_per_second(video_path, cfg)
+        auto_offset, auto_corr = estimate_offset_by_motion(f, gpx, cfg)
+
+    offset_used, source = _resolve_offset(
+        metadata_offset, from_metadata, filename_offset,
+        auto_offset, offset_override, use_auto,
+    )
+    return ResolvedOffset(
+        offset_used=offset_used, offset_source=source,
+        metadata_offset=metadata_offset, filename_offset=filename_offset,
+        auto_offset=auto_offset, auto_correlation=auto_corr,
+        video_creation_time=video_start, from_metadata=from_metadata,
+    )
+
+
+def analyze_video(video_path, gpx: GpxData, cfg: Config,
+                  offset_override=None, use_auto=False) -> Analysis:
+    """Compute flow once, resolve the sync offset, score, and merge (flow mode)."""
+    duration = int(round(get_video_duration(video_path)))
     flow = compute_optical_flow_per_second(video_path, cfg)
     if not flow:
         flow = [0.0] * duration
 
-    auto_offset, auto_corr = estimate_offset_by_motion(flow, gpx, cfg)
-    offset_used, offset_source = _resolve_offset(
-        metadata_offset, from_metadata, None, auto_offset, offset_override, use_auto
-    )
+    r = resolve_sync_offset(video_path, gpx, cfg, offset_override, use_auto, flow=flow)
 
     speeds_at_video = [
-        speed_at_video_time(float(t), offset_used, gpx.speeds_kmh) for t in range(duration)
+        speed_at_video_time(float(t), r.offset_used, gpx.speeds_kmh) for t in range(duration)
     ]
     scores = score_seconds(speeds_at_video, flow, cfg)
     segments = merge_segments(scores, cfg)
@@ -380,8 +410,9 @@ def analyze_video(video_path, gpx: GpxData, cfg: Config,
 
     return Analysis(
         flow_per_sec=flow, speeds_at_video=speeds_at_video, scores=scores,
-        segments=segments, offset_used=offset_used, offset_source=offset_source,
-        metadata_offset=metadata_offset, auto_offset=auto_offset,
-        auto_correlation=auto_corr, video_creation_time=video_start,
-        from_metadata=from_metadata, video_duration=float(duration), fps=fps,
+        segments=segments, offset_used=r.offset_used, offset_source=r.offset_source,
+        metadata_offset=r.metadata_offset, filename_offset=r.filename_offset,
+        auto_offset=r.auto_offset, auto_correlation=r.auto_correlation,
+        video_creation_time=r.video_creation_time, from_metadata=r.from_metadata,
+        video_duration=float(duration), fps=fps,
     )

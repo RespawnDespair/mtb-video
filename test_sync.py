@@ -457,3 +457,23 @@ def test_resolve_offset_metadata_beats_filename():
 def test_resolve_offset_manual_and_auto_still_win():
     assert _resolve_offset(50.0, True, 12.0, 4.0, 7.5, True)[1] == "manual"
     assert _resolve_offset(50.0, True, 12.0, 4.0, None, True) == (4.0, "auto")
+
+
+from highlight_detector import resolve_sync_offset, ResolvedOffset
+
+
+def test_resolve_sync_offset_no_flow_when_not_auto(monkeypatch, tmp_path):
+    import highlight_detector as hd
+    called = {"flow": 0}
+    def boom(*a, **k):
+        called["flow"] += 1
+        return []
+    monkeypatch.setattr(hd, "compute_optical_flow_per_second", boom)
+    monkeypatch.setattr(hd, "get_video_creation_time",
+                        lambda p: (_gpx_with_speeds([0]).start_time, True))
+    monkeypatch.setattr(hd, "get_filename_timestamp", lambda p: None)
+    gpx = _gpx_with_speeds([0, 1, 2])
+    r = resolve_sync_offset("fake.mp4", gpx, Config(), offset_override=None, use_auto=False)
+    assert isinstance(r, ResolvedOffset)
+    assert r.offset_source == "metadata"
+    assert called["flow"] == 0        # optical flow NOT computed without --auto-sync
