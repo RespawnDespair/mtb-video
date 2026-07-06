@@ -161,3 +161,39 @@ def test_creation_time_falls_back_to_mtime(monkeypatch, tmp_path):
     dt, from_meta = highlight_detector.get_video_creation_time(str(f))
     assert from_meta is False
     assert dt.tzinfo is not None
+
+
+from config import Config
+from highlight_detector import score_seconds, merge_segments, Segment
+
+
+def test_score_seconds_standstill_is_zero():
+    cfg = Config()
+    # speed below min_speed_kmh -> score forced to 0 regardless of flow
+    scores = score_seconds([0.0, 2.0], [1.0, 1.0], cfg)
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+
+
+def test_score_seconds_fast_and_chaotic_scores_high():
+    cfg = Config()
+    scores = score_seconds([40.0], [1.0], cfg)  # high speed + high flow
+    assert scores[0] > cfg.score_cutoff
+
+
+def test_merge_segments_bridges_small_gaps_and_drops_short():
+    cfg = Config(score_cutoff=0.5, min_segment_seconds=2.0, gap_bridge_seconds=2.0)
+    # seconds:      0    1    2    3    4    5
+    scores =       [0.9, 0.9, 0.1, 0.9, 0.9, 0.1]
+    segs = merge_segments(scores, cfg)
+    # 0-1 kept, gap at 2 (1s <= bridge) bridges to 3-4 -> one segment 0..5
+    assert len(segs) == 1
+    assert segs[0].start == 0.0
+    assert segs[0].end == 5.0
+
+
+def test_merge_segments_drops_too_short():
+    cfg = Config(score_cutoff=0.5, min_segment_seconds=3.0, gap_bridge_seconds=0.0)
+    scores = [0.9, 0.1, 0.1, 0.1]
+    segs = merge_segments(scores, cfg)
+    assert segs == []

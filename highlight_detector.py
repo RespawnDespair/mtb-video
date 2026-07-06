@@ -6,7 +6,11 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import cv2
 import gpxpy
+import numpy as np
+
+from config import Config
 
 
 @dataclass
@@ -138,3 +142,111 @@ def get_video_creation_time(path: str) -> tuple[datetime, bool]:
 def get_video_duration(path: str) -> float:
     info = _ffprobe_json(path)
     return float(info.get("format", {}).get("duration", 0.0))
+
+
+@dataclass
+class Segment:
+    start: float
+    end: float
+    score: float
+
+
+def score_seconds(speeds_at_video_secs, flow_per_sec, cfg: Config) -> list[float]:
+    """Combine per-second GPS speed and optical flow into interest scores [0,1].
+
+    Uses absolute reference scaling (not whole-ride min/max) so scores are
+    comparable across rides and well-defined for any series length.
+    """
+    n = min(len(speeds_at_video_secs), len(flow_per_sec))
+    speeds = list(speeds_at_video_secs[:n])
+    flows = list(flow_per_sec[:n])
+    scores = []
+    for i in range(n):
+        if speeds[i] < cfg.min_speed_kmh:
+            scores.append(0.0)  # standstill dropped outright
+            continue
+        speed_norm = min(1.0, speeds[i] / cfg.speed_reference_kmh)
+        flow_norm = min(1.0, flows[i] / cfg.flow_reference)
+        s = cfg.gps_weight * speed_norm + cfg.flow_weight * flow_norm
+        scores.append(max(0.0, min(1.0, s)))
+    return scores
+
+
+def merge_segments(scores: list[float], cfg: Config) -> list[Segment]:
+    """Turn per-second scores into kept segments, bridging small gaps."""
+    kept = [i for i, s in enumerate(scores) if s >= cfg.score_cutoff]
+    if not kept:
+        return []
+    bridge = int(round(cfg.gap_bridge_seconds))
+    segments: list[Segment] = []
+    run_start = kept[0]
+    prev = kept[0]
+    for idx in kept[1:]:
+        if idx - prev <= bridge + 1:
+            prev = idx
+            continue
+        segments.append((run_start, prev))
+        run_start = idx
+        prev = idx
+    segments.append((run_start, prev))
+
+    result: list[Segment] = []
+    for a, b in segments:
+        start = float(a)
+        end = float(b + 1)  # inclusive second -> exclusive end
+        if end - start < cfg.min_segment_seconds:
+            continue
+        avg = float(np.mean(scores[a:b + 1]))
+        result.append(Segment(start=start, end=end, score=avg))
+    return result
+
+
+def compute_optical_flow_per_second(video_path: str, cfg: Config) -> list[float]:
+    """Farneback optical flow sampled per second -> mean motion magnitude per second."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"OpenCV could not open video: {video_path}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    step = max(1, int(round(fps / cfg.flow_sample_fps)))
+
+    per_second: dict[int, list[float]] = {}
+    prev_gray = None
+    frame_idx = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if frame_idx % step == 0:
+            gray = cv2.cvtColor(cv2.resize(frame, (320, 180)), cv2.COLOR_BGR2GRAY)
+            if prev_gray is not None:
+                flow = cv2.calcOpticalFlowFarneback(
+                    prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
+                )
+                mag = float(np.mean(np.linalg.norm(flow, axis=2)))
+                sec = int(frame_idx / fps)
+                per_second.setdefault(sec, []).append(mag)
+            prev_gray = gray
+        frame_idx += 1
+    cap.release()
+
+    if not per_second:
+        return []
+    duration_secs = max(per_second.keys()) + 1
+    return [float(np.mean(per_second.get(s, [0.0]))) for s in range(duration_secs)]
+
+
+def detect_highlights(video_path: str, gpx: GpxData, cfg: Config):
+    """Sync GPS to video, run optical flow, score, and merge into segments."""
+    video_start, _ = get_video_creation_time(video_path)
+    offset = compute_offset_seconds(video_start, gpx.start_time)
+    duration = int(round(get_video_duration(video_path)))
+
+    speeds_at_video = [
+        speed_at_video_time(float(t), offset, gpx.speeds_kmh) for t in range(duration)
+    ]
+    flow = compute_optical_flow_per_second(video_path, cfg)
+    if not flow:
+        flow = [0.0] * duration
+    scores = score_seconds(speeds_at_video, flow, cfg)
+    segments = merge_segments(scores, cfg)
+    return segments, scores
