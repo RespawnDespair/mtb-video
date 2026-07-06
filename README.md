@@ -41,6 +41,26 @@ python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
 Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
 Deeper tuning lives in `config.py`.
 
+### Highlight modes
+
+By default (`--mode auto`) the tool uses your **Strava segments** as highlights when
+available, otherwise it falls back to speed/motion detection.
+
+```bash
+# Segment mode: one clip per noteworthy segment (medal/PR/starred) with a
+# lower-third summary (name · time · speed · power · HR). Needs Strava + activity id:
+python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 \
+    --strava --strava-activity-id 1234567890 --mode segments
+
+# Force the classic speed/motion mode:
+python main.py --video ride.mp4 --gpx ride.gpx --mode flow
+```
+
+Segment timing uses the same sync offset as the rest of the pipeline
+(`--inspect` / `--auto-sync` / `--sync-offset`). The filename timestamp
+(`VID_YYYYMMDD_HHMMSS`) is used as a sync source when `creation_time` metadata is
+missing.
+
 ### Fixing sync (copied videos with wrong timestamps)
 
 If the video's `creation_time` was altered by copying, the GPX↔video alignment is

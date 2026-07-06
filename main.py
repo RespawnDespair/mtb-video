@@ -64,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Force the sync offset in seconds (video_t -> activity_t + offset).")
     p.add_argument("--auto-sync", action="store_true",
                    help="Use motion/GPS cross-correlation to pick the offset for rendering.")
+    p.add_argument("--mode", choices=["auto", "segments", "flow"], default="auto",
+                   help="Highlight source: auto (segments if available else flow), "
+                        "segments (Strava segments only), or flow (speed/motion).")
     return p
 
 
@@ -108,6 +111,8 @@ def print_inspection(analysis, gpx) -> None:
     print(f"  metadata offset: {a.metadata_offset:+.1f} s")
     print(f"  auto offset    : {a.auto_offset:+.1f} s   (correlation {a.auto_correlation:+.2f})")
     print(f"  USING          : {a.offset_used:+.1f} s   (source: {a.offset_source})")
+    fo = a.filename_offset
+    print(f"  filename offset: {('%+.1f s' % fo) if fo is not None else 'n/a'}")
     if a.offset_source == "auto" and abs(a.auto_correlation) < 0.3:
         print("  ! low correlation — the auto-aligned offset is uncertain; verify the "
               "sparklines or set --sync-offset manually.")
@@ -128,6 +133,24 @@ def print_inspection(analysis, gpx) -> None:
         print(f"    {seg.start:7.1f}s -> {seg.end:7.1f}s  score={seg.score:0.2f}")
 
 
+def select_segment_clips(args, gpx, cfg, offset_seconds):
+    """Fetch + map Strava segment efforts to clips, or None if unavailable."""
+    from highlight_detector import get_video_duration
+    try:
+        import strava_client
+        from segment_detector import parse_efforts, efforts_to_clips
+        if not strava_client.is_configured() or not args.strava_activity_id:
+            return None
+        raw = strava_client.get_segment_efforts(args.strava_activity_id)
+        efforts = parse_efforts(raw)
+        duration = get_video_duration(args.video)
+        clips = efforts_to_clips(efforts, gpx.start_time, offset_seconds, duration, cfg)
+        return clips or None
+    except Exception as e:
+        print(f"[warn] Strava segments unavailable: {e}", file=sys.stderr)
+        return None
+
+
 def main() -> int:
     args = build_parser().parse_args()
     check_ffmpeg()
@@ -135,27 +158,63 @@ def main() -> int:
 
     gpx = load_gpx(args.gpx)
     offset_override, use_auto = resolve_offset_args(args)
-    analysis = analyze_video(args.video, gpx, cfg,
-                             offset_override=offset_override, use_auto=use_auto)
 
-    if analysis.offset_source == "mtime":
-        print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
-              "for sync — alignment may be approximate. Use --inspect / --auto-sync / "
-              "--sync-offset to correct it.", file=sys.stderr)
+    from highlight_detector import resolve_sync_offset
 
     if args.inspect:
+        analysis = analyze_video(args.video, gpx, cfg,
+                                 offset_override=offset_override, use_auto=use_auto)
+        if analysis.offset_source == "mtime":
+            print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
+                  "for sync — alignment may be approximate.", file=sys.stderr)
         print_inspection(analysis, gpx)
         return 0
 
+    # Resolve the offset flow-free unless --auto-sync (avoids optical flow on big clips).
+    r = resolve_sync_offset(args.video, gpx, cfg,
+                            offset_override=offset_override, use_auto=use_auto)
+    if r.offset_source == "mtime":
+        print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
+              "for sync — alignment may be approximate.", file=sys.stderr)
+
+    clips = None
+    if args.mode in ("auto", "segments"):
+        clips = select_segment_clips(args, gpx, cfg, r.offset_used)
+        if args.mode == "segments" and not clips:
+            print("Segment mode requested but no Strava segments available "
+                  "(need --strava-activity-id, configured Strava, and segments in "
+                  "the video window).", file=sys.stderr)
+            return 1
+
+    if clips:  # segment mode
+        if args.dry_run:
+            print(f"Segment highlights ({len(clips)}):")
+            for c in clips:
+                from segment_detector import format_segment_stats
+                print(f"  {c.start:7.1f}s -> {c.end:7.1f}s  {c.name}  "
+                      f"[{format_segment_stats(c)}]")
+            return 0
+        from video_editor import build_segment_reel
+        from intro_generator import build_final_video
+        reel = build_segment_reel(args.video, clips, args.music, cfg)
+        try:
+            build_final_video(reel, gpx, cfg, args.output, args)
+        finally:
+            import os, shutil
+            shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
+        print(f"Wrote {args.output}")
+        return 0
+
+    # flow mode (fallback / --mode flow)
+    analysis = analyze_video(args.video, gpx, cfg,
+                             offset_override=offset_override, use_auto=use_auto)
     segments, scores = analysis.segments, analysis.scores
     if args.dry_run:
         print_segments(segments, scores)
         return 0
-
     if not segments:
         print("No highlight segments detected; nothing to render.", file=sys.stderr)
         return 1
-
     from video_editor import build_highlight_reel
     from intro_generator import build_final_video
     reel = build_highlight_reel(args.video, segments, args.music, cfg)
