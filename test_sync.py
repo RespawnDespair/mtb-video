@@ -215,3 +215,22 @@ def test_amix_filter_with_music_includes_volumes_and_fade():
     assert "amix" in f
     assert "afade=t=out" in f      # music fade-out
     assert "st=57" in f            # fade starts at duration - fade_out (60-3)
+
+
+from intro_generator import format_moving_time, reverse_geocode
+
+
+def test_format_moving_time():
+    assert format_moving_time(0) == "0m"
+    assert format_moving_time(90) == "1m"
+    assert format_moving_time(3660) == "1h 1m"
+
+
+def test_reverse_geocode_falls_back_on_error(monkeypatch):
+    import intro_generator
+    class Boom:
+        def reverse(self, *a, **k):
+            raise RuntimeError("network down")
+    monkeypatch.setattr(intro_generator, "_geocoder", lambda: Boom())
+    result = reverse_geocode(46.0, 7.0)
+    assert result == "46.0000, 7.0000"

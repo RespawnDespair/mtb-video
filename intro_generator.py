@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import tempfile
+
+from config import Config
+from highlight_detector import GpxData
+
+
+def format_moving_time(seconds: float) -> str:
+    total_min = int(seconds // 60)
+    h, m = divmod(total_min, 60)
+    if h > 0:
+        return f"{h}h {m}m"
+    return f"{m}m"
+
+
+def _geocoder():
+    from geopy.geocoders import Nominatim
+    return Nominatim(user_agent="ride-highlight-editor")
+
+
+def reverse_geocode(lat: float, lon: float) -> str:
+    """Human-readable place for a coordinate; falls back to raw lat/lon on failure."""
+    try:
+        loc = _geocoder().reverse((lat, lon), language="en", timeout=10)
+        if loc and loc.address:
+            addr = loc.raw.get("address", {})
+            town = (addr.get("city") or addr.get("town") or addr.get("village")
+                    or addr.get("municipality"))
+            region = addr.get("state") or addr.get("country")
+            if town and region:
+                return f"{town}, {region}"
+            return loc.address.split(",")[0]
+    except Exception:
+        pass
+    return f"{lat:.4f}, {lon:.4f}"
+
+
+def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict | None = None) -> str:
+    """Render a stats intro clip with MoviePy."""
+    from moviepy.editor import TextClip, ColorClip, CompositeVideoClip
+
+    location = reverse_geocode(*gpx.first_coord)
+    date_str = gpx.start_time.strftime("%d %B %Y")
+    lines = [
+        location,
+        date_str,
+        f"{gpx.total_distance_km:.1f} km   +{gpx.elevation_gain_m:.0f} m",
+        f"Moving time {format_moving_time(gpx.moving_time_s)}",
+    ]
+    if extra_stats:
+        if extra_stats.get("avg_hr"):
+            lines.append(f"Avg HR {extra_stats['avg_hr']} bpm")
+        if extra_stats.get("avg_power"):
+            lines.append(f"Avg Power {extra_stats['avg_power']} W")
+
+    W, H = 1920, 1080
+    bg = ColorClip(size=(W, H), color=(15, 15, 20)).set_duration(cfg.intro_duration)
+    text = "\n".join(lines)
+    txt = (TextClip(text, fontsize=70, color="white", font="Arial", method="label")
+           .set_duration(cfg.intro_duration)
+           .set_position("center"))
+    clip = CompositeVideoClip([bg, txt]).set_duration(cfg.intro_duration)
+    clip.write_videofile(out_path, fps=30, codec="libx264", audio=False, logger=None)
+    return out_path
+
+
+def _gather_extra_stats(gpx: GpxData, args) -> dict:
+    stats: dict = {}
+    if getattr(args, "strava", False):
+        try:
+            from strava_client import get_activity_stats
+            stats.update(get_activity_stats(getattr(args, "strava_activity_id", None)))
+        except Exception as e:
+            print(f"[warn] Strava stats skipped: {e}")
+    if getattr(args, "garmin", False):
+        try:
+            from garmin_client import get_activity_stats as garmin_stats
+            stats.update(garmin_stats(gpx.start_time))
+        except Exception as e:
+            print(f"[warn] Garmin stats skipped: {e}")
+    return stats
+
+
+def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args) -> str:
+    """Prepend the intro to the reel and re-encode the concat so params match."""
+    workdir = tempfile.mkdtemp(prefix="rhe_final_")
+    intro = os.path.join(workdir, "intro.mp4")
+    extra = _gather_extra_stats(gpx, args)
+    build_intro_clip(gpx, cfg, intro, extra)
+
+    # Re-encode both into uniform params, then concat via filter (robust across cameras).
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", intro, "-i", reel_path,
+         "-filter_complex",
+         "[0:v]scale=1920:1080,setsar=1,fps=30[v0];"
+         "[1:v]scale=1920:1080,setsar=1,fps=30[v1];"
+         "[v0][0:a?][v1][1:a?]concat=n=2:v=1:a=1[v][a]",
+         "-map", "[v]", "-map", "[a]",
+         "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output],
+        check=True, capture_output=True,
+    )
+    return output
