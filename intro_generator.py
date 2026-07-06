@@ -84,6 +84,23 @@ def _gather_extra_stats(gpx: GpxData, args) -> dict:
     return stats
 
 
+def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: float, output: str) -> str:
+    """Concat a silent, video-only intro with the reel, giving the intro a real
+    silent audio stream via an anullsrc input so concat's pad count balances."""
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", intro_path, "-i", reel_path,
+         "-f", "lavfi", "-t", str(intro_duration), "-i", "anullsrc=r=44100:cl=stereo",
+         "-filter_complex",
+         "[0:v]scale=1920:1080,setsar=1,fps=30[v0];"
+         "[1:v]scale=1920:1080,setsar=1,fps=30[v1];"
+         "[v0][2:a][v1][1:a]concat=n=2:v=1:a=1[v][a]",
+         "-map", "[v]", "-map", "[a]",
+         "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output],
+        check=True, capture_output=True,
+    )
+    return output
+
+
 def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args) -> str:
     """Prepend the intro to the reel and re-encode the concat so params match."""
     workdir = tempfile.mkdtemp(prefix="rhe_final_")
@@ -92,14 +109,4 @@ def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, ar
     build_intro_clip(gpx, cfg, intro, extra)
 
     # Re-encode both into uniform params, then concat via filter (robust across cameras).
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", intro, "-i", reel_path,
-         "-filter_complex",
-         "[0:v]scale=1920:1080,setsar=1,fps=30[v0];"
-         "[1:v]scale=1920:1080,setsar=1,fps=30[v1];"
-         "[v0][0:a?][v1][1:a?]concat=n=2:v=1:a=1[v][a]",
-         "-map", "[v]", "-map", "[a]",
-         "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output],
-        check=True, capture_output=True,
-    )
-    return output
+    return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output)

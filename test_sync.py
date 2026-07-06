@@ -234,3 +234,48 @@ def test_reverse_geocode_falls_back_on_error(monkeypatch):
     monkeypatch.setattr(intro_generator, "_geocoder", lambda: Boom())
     result = reverse_geocode(46.0, 7.0)
     assert result == "46.0000, 7.0000"
+
+
+import json
+import shutil
+import subprocess
+
+import intro_generator
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg not installed",
+)
+def test_concat_intro_and_reel_handles_silent_intro(tmp_path):
+    intro = tmp_path / "intro.mp4"
+    reel = tmp_path / "reel.mp4"
+    out = tmp_path / "final.mp4"
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=2",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(intro)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=2",
+         "-f", "lavfi", "-i", "sine=frequency=440:d=2",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(reel)],
+        check=True, capture_output=True,
+    )
+
+    intro_generator._concat_intro_and_reel(str(intro), str(reel), 2.0, str(out))
+
+    assert out.exists()
+    assert out.stat().st_size > 0
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
+         "-of", "json", str(out)],
+        check=True, capture_output=True, text=True,
+    )
+    streams = json.loads(probe.stdout)["streams"]
+    video_streams = [s for s in streams if s["codec_type"] == "video"]
+    audio_streams = [s for s in streams if s["codec_type"] == "audio"]
+    assert len(video_streams) == 1
+    assert len(audio_streams) == 1
