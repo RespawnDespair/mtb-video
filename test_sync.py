@@ -732,3 +732,24 @@ def test_sample_telemetry_clamps_out_of_range():
     g = _gpx_series()
     s = sample_telemetry(g, activity_time_s=100.0, segment_start_s=0.0)
     assert s.speed_kmh == 40.0        # clamps to last
+
+
+from minimap import compute_bounds, project, project_track
+
+
+def test_project_track_fits_box_and_preserves_aspect():
+    # a simple L-shaped track
+    coords = [(51.800, 4.000), (51.802, 4.000), (51.802, 4.004)]
+    pts = project_track(coords, w=200, h=200, pad=20)
+    assert len(pts) == 3
+    for x, y in pts:
+        assert 20 - 1e-6 <= x <= 180 + 1e-6
+        assert 20 - 1e-6 <= y <= 180 + 1e-6
+    # north (higher lat) maps to smaller y (top): point[1] has higher lat than point[0]
+    assert pts[1][1] < pts[0][1]
+
+
+def test_project_single_point_is_centered():
+    coords = [(51.8, 4.0)]
+    x, y = project_track(coords, w=100, h=100, pad=10)[0]
+    assert abs(x - 50) < 1e-6 and abs(y - 50) < 1e-6
