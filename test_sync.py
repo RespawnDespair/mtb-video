@@ -375,22 +375,22 @@ from highlight_detector import _resolve_offset
 
 def test_resolve_offset_manual_wins():
     used, src = _resolve_offset(metadata_offset=10.0, from_metadata=True,
-                                auto_offset=4.0, offset_override=7.5, use_auto=True)
+                                filename_offset=None, auto_offset=4.0, offset_override=7.5, use_auto=True)
     assert used == 7.5 and src == "manual"
 
 
 def test_resolve_offset_auto_when_requested():
-    used, src = _resolve_offset(10.0, True, 4.0, offset_override=None, use_auto=True)
+    used, src = _resolve_offset(10.0, True, None, 4.0, offset_override=None, use_auto=True)
     assert used == 4.0 and src == "auto"
 
 
 def test_resolve_offset_metadata_default():
-    used, src = _resolve_offset(10.0, True, 4.0, offset_override=None, use_auto=False)
+    used, src = _resolve_offset(10.0, True, None, 4.0, offset_override=None, use_auto=False)
     assert used == 10.0 and src == "metadata"
 
 
 def test_resolve_offset_mtime_source_when_not_from_metadata():
-    used, src = _resolve_offset(10.0, False, 4.0, offset_override=None, use_auto=False)
+    used, src = _resolve_offset(10.0, False, None, 4.0, offset_override=None, use_auto=False)
     assert used == 10.0 and src == "mtime"
 
 
@@ -421,3 +421,39 @@ def test_resolve_offset_args_manual():
 def test_resolve_offset_args_default():
     class A: sync_offset = None; auto_sync = False
     assert resolve_offset_args(A()) == (None, False)
+
+
+from datetime import datetime
+from highlight_detector import parse_filename_datetime, _resolve_offset
+
+
+def test_parse_filename_datetime_insta360():
+    dt = parse_filename_datetime("VID_20260705_144402_00_003.mp4")
+    assert dt == datetime(2026, 7, 5, 14, 44, 2)
+
+
+def test_parse_filename_datetime_no_match():
+    assert parse_filename_datetime("random_clip.mp4") is None
+
+
+def test_resolve_offset_filename_beats_mtime():
+    # no metadata (from_metadata False) but a filename offset -> use filename
+    used, src = _resolve_offset(metadata_offset=99.0, from_metadata=False,
+                                filename_offset=12.0, auto_offset=4.0,
+                                offset_override=None, use_auto=False)
+    assert used == 12.0 and src == "filename"
+
+
+def test_resolve_offset_mtime_when_no_filename():
+    used, src = _resolve_offset(99.0, False, None, 4.0, None, False)
+    assert used == 99.0 and src == "mtime"
+
+
+def test_resolve_offset_metadata_beats_filename():
+    used, src = _resolve_offset(50.0, True, 12.0, 4.0, None, False)
+    assert used == 50.0 and src == "metadata"
+
+
+def test_resolve_offset_manual_and_auto_still_win():
+    assert _resolve_offset(50.0, True, 12.0, 4.0, 7.5, True)[1] == "manual"
+    assert _resolve_offset(50.0, True, 12.0, 4.0, None, True) == (4.0, "auto")

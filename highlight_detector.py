@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ import numpy as np
 from config import Config
 
 _MIN_CORR_OVERLAP = 10
+_FILENAME_TS_RE = re.compile(r"VID_(\d{8})_(\d{6})")
 
 
 @dataclass
@@ -50,6 +52,27 @@ def _to_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def parse_filename_datetime(name: str) -> "datetime | None":
+    """Parse VID_YYYYMMDD_HHMMSS from a filename into a naive local datetime."""
+    m = _FILENAME_TS_RE.search(name)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def get_filename_timestamp(path: str) -> "datetime | None":
+    """Filename timestamp localized to tz-aware UTC via the system timezone."""
+    naive = parse_filename_datetime(os.path.basename(path))
+    if naive is None:
+        return None
+    # Interpret as local wall-clock time, then convert to UTC.
+    local = naive.astimezone()  # attaches system local tz to a naive datetime
+    return local.astimezone(timezone.utc)
 
 
 def load_gpx(path: str) -> GpxData:
@@ -305,13 +328,18 @@ class Analysis:
     fps: float
 
 
-def _resolve_offset(metadata_offset, from_metadata, auto_offset, offset_override, use_auto):
-    """Pick the offset by precedence: manual > auto > metadata/mtime."""
+def _resolve_offset(metadata_offset, from_metadata, filename_offset,
+                    auto_offset, offset_override, use_auto):
+    """Pick the offset by precedence: manual > auto > metadata > filename > mtime."""
     if offset_override is not None:
         return float(offset_override), "manual"
     if use_auto:
         return float(auto_offset), "auto"
-    return float(metadata_offset), ("metadata" if from_metadata else "mtime")
+    if from_metadata:
+        return float(metadata_offset), "metadata"
+    if filename_offset is not None:
+        return float(filename_offset), "filename"
+    return float(metadata_offset), "mtime"
 
 
 def analyze_video(video_path, gpx: GpxData, cfg: Config,
@@ -331,7 +359,7 @@ def analyze_video(video_path, gpx: GpxData, cfg: Config,
 
     auto_offset, auto_corr = estimate_offset_by_motion(flow, gpx, cfg)
     offset_used, offset_source = _resolve_offset(
-        metadata_offset, from_metadata, auto_offset, offset_override, use_auto
+        metadata_offset, from_metadata, None, auto_offset, offset_override, use_auto
     )
 
     speeds_at_video = [
