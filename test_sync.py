@@ -652,3 +652,42 @@ def test_lower_third_renders_with_apostrophe(tmp_path):
                        capture_output=True)
     assert r.returncode == 0, r.stderr.decode()[-500:]
     assert out.exists() and out.stat().st_size > 0
+
+
+import textwrap
+from highlight_detector import load_gpx
+
+GPX_HR = textwrap.dedent("""\
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="t" xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+  <trk><trkseg>
+    <trkpt lat="51.8000000" lon="4.0000000"><ele>10.0</ele><time>2026-07-05T12:00:00Z</time>
+      <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>100</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+    <trkpt lat="51.8001000" lon="4.0000000"><ele>16.0</ele><time>2026-07-05T12:00:01Z</time>
+      <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>110</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+    <trkpt lat="51.8002000" lon="4.0000000"><ele>22.0</ele><time>2026-07-05T12:00:02Z</time>
+      <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>120</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+  </trkseg></trk>
+</gpx>
+""")
+
+
+def test_load_gpx_parses_hr_elevation_distance(tmp_path):
+    p = tmp_path / "hr.gpx"
+    p.write_text(GPX_HR)
+    g = load_gpx(str(p))
+    assert len(g.elevations_m) == 3
+    assert g.elevations_m[0] == 10.0 and g.elevations_m[2] == 22.0
+    assert g.hr_bpm[0] == 100 and g.hr_bpm[2] == 120
+    assert g.cum_distance_m[0] == 0.0
+    assert g.cum_distance_m[2] > g.cum_distance_m[1] > 0.0   # monotonic
+
+
+def test_load_gpx_hr_none_when_absent(tmp_path):
+    # reuse the earlier no-HR fixture SYNTHETIC_GPX (already in this file)
+    p = tmp_path / "plain.gpx"
+    p.write_text(SYNTHETIC_GPX)
+    g = load_gpx(str(p))
+    assert all(h is None for h in g.hr_bpm)
+    assert len(g.elevations_m) == len(g.speeds_kmh)

@@ -26,6 +26,27 @@ class GpxData:
     elevation_gain_m: float = 0.0
     moving_time_s: float = 0.0
     first_coord: tuple[float, float] = (0.0, 0.0)
+    elevations_m: list = field(default_factory=list)      # per-second, forward-filled
+    hr_bpm: list = field(default_factory=list)             # per-second, None where absent
+    cum_distance_m: list = field(default_factory=list)     # per-second cumulative distance
+
+
+def _parse_hr(point):
+    """Extract heart rate (bpm) from a gpxpy point's TrackPointExtension, or None."""
+    for ext in (point.extensions or []):
+        # ext may itself be the <hr> element or a container holding it
+        if str(getattr(ext, "tag", "")).endswith("hr") and ext.text:
+            try:
+                return int(float(ext.text))
+            except ValueError:
+                return None
+        for child in list(ext):
+            if str(child.tag).endswith("hr") and child.text:
+                try:
+                    return int(float(child.text))
+                except ValueError:
+                    return None
+    return None
 
 
 def compute_offset_seconds(video_start: datetime, activity_start: datetime) -> float:
@@ -91,6 +112,9 @@ def load_gpx(path: str) -> GpxData:
     # forward-filled below from the nearest earlier known value.
     speeds: list[float | None] = [None] * (duration + 1)
     coords: list[tuple[float, float] | None] = [None] * (duration + 1)
+    elevations: list[float | None] = [None] * (duration + 1)
+    hrs: list[int | None] = [None] * (duration + 1)
+    cumdist: list[float | None] = [None] * (duration + 1)
 
     total_distance_m = 0.0
     elevation_gain_m = 0.0
@@ -113,9 +137,15 @@ def load_gpx(path: str) -> GpxData:
                 gain = p.elevation - prev.elevation
                 if gain > 0:
                     elevation_gain_m += gain
+            elevations[sec] = p.elevation if p.elevation is not None else 0.0
+            hrs[sec] = _parse_hr(p)
+            cumdist[sec] = total_distance_m  # running 2D/3D distance already accumulated
         else:
             speeds[sec] = 0.0
             coords[sec] = (p.latitude, p.longitude)
+            elevations[sec] = p.elevation if p.elevation is not None else 0.0
+            hrs[sec] = _parse_hr(p)
+            cumdist[sec] = 0.0
         prev = p
 
     # Forward-fill seconds with no trackpoint from the last known value,
@@ -132,6 +162,23 @@ def load_gpx(path: str) -> GpxData:
         else:
             last_coord = coords[i]
 
+    last_elevation = elevations[0] if elevations[0] is not None else 0.0
+    last_hr = hrs[0]
+    last_cumdist = 0.0
+    for i in range(len(elevations)):
+        if elevations[i] is None:
+            elevations[i] = last_elevation
+        else:
+            last_elevation = elevations[i]
+        if hrs[i] is None:
+            hrs[i] = last_hr
+        else:
+            last_hr = hrs[i]
+        if cumdist[i] is None:
+            cumdist[i] = last_cumdist
+        else:
+            last_cumdist = cumdist[i]
+
     return GpxData(
         start_time=start,
         speeds_kmh=speeds,
@@ -140,6 +187,9 @@ def load_gpx(path: str) -> GpxData:
         elevation_gain_m=elevation_gain_m,
         moving_time_s=moving_time_s,
         first_coord=(points[0].latitude, points[0].longitude),
+        elevations_m=elevations,
+        hr_bpm=hrs,
+        cum_distance_m=cumdist,
     )
 
 
