@@ -368,3 +368,27 @@ def test_estimate_offset_ignores_spurious_short_window():
 
     assert offset == 3.0
     assert corr > 0.9
+
+
+from highlight_detector import _resolve_offset
+
+
+def test_resolve_offset_manual_wins():
+    used, src = _resolve_offset(metadata_offset=10.0, from_metadata=True,
+                                auto_offset=4.0, offset_override=7.5, use_auto=True)
+    assert used == 7.5 and src == "manual"
+
+
+def test_resolve_offset_auto_when_requested():
+    used, src = _resolve_offset(10.0, True, 4.0, offset_override=None, use_auto=True)
+    assert used == 4.0 and src == "auto"
+
+
+def test_resolve_offset_metadata_default():
+    used, src = _resolve_offset(10.0, True, 4.0, offset_override=None, use_auto=False)
+    assert used == 10.0 and src == "metadata"
+
+
+def test_resolve_offset_mtime_source_when_not_from_metadata():
+    used, src = _resolve_offset(10.0, False, 4.0, offset_override=None, use_auto=False)
+    assert used == 10.0 and src == "mtime"

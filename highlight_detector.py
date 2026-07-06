@@ -240,25 +240,8 @@ def compute_optical_flow_per_second(video_path: str, cfg: Config) -> list[float]
 
 def detect_highlights(video_path: str, gpx: GpxData, cfg: Config):
     """Sync GPS to video, run optical flow, score, and merge into segments."""
-    video_start, from_metadata = get_video_creation_time(video_path)
-    if not from_metadata:
-        print(
-            f"[warn] {video_path} has no creation_time metadata; "
-            "using file mtime for sync — segment alignment may be approximate.",
-            file=sys.stderr,
-        )
-    offset = compute_offset_seconds(video_start, gpx.start_time)
-    duration = int(round(get_video_duration(video_path)))
-
-    speeds_at_video = [
-        speed_at_video_time(float(t), offset, gpx.speeds_kmh) for t in range(duration)
-    ]
-    flow = compute_optical_flow_per_second(video_path, cfg)
-    if not flow:
-        flow = [0.0] * duration
-    scores = score_seconds(speeds_at_video, flow, cfg)
-    segments = merge_segments(scores, cfg)
-    return segments, scores
+    a = analyze_video(video_path, gpx, cfg)
+    return a.segments, a.scores
 
 
 def _pearson(a: np.ndarray, b: np.ndarray) -> float:
@@ -304,3 +287,74 @@ def estimate_offset_by_motion(flow_per_sec, gpx: GpxData, cfg: Config):
             best_offset = float(lag)
             found = True
     return best_offset, best_corr
+
+
+@dataclass
+class Analysis:
+    flow_per_sec: list[float]
+    speeds_at_video: list[float]
+    scores: list[float]
+    segments: list[Segment]
+    offset_used: float
+    offset_source: str            # "manual" | "auto" | "metadata" | "mtime"
+    metadata_offset: float
+    auto_offset: float
+    auto_correlation: float
+    video_creation_time: datetime
+    from_metadata: bool
+    video_duration: float
+    fps: float
+
+
+def _resolve_offset(metadata_offset, from_metadata, auto_offset, offset_override, use_auto):
+    """Pick the offset by precedence: manual > auto > metadata/mtime."""
+    if offset_override is not None:
+        return float(offset_override), "manual"
+    if use_auto:
+        return float(auto_offset), "auto"
+    return float(metadata_offset), ("metadata" if from_metadata else "mtime")
+
+
+def analyze_video(video_path, gpx: GpxData, cfg: Config,
+                  offset_override=None, use_auto=False) -> Analysis:
+    """Compute flow once, resolve the sync offset, score, and merge.
+
+    offset_override forces a manual offset; use_auto selects the cross-correlation
+    estimate; otherwise the creation_time/mtime offset is used.
+    """
+    video_start, from_metadata = get_video_creation_time(video_path)
+    metadata_offset = compute_offset_seconds(video_start, gpx.start_time)
+    duration = int(round(get_video_duration(video_path)))
+
+    flow = compute_optical_flow_per_second(video_path, cfg)
+    if not flow:
+        flow = [0.0] * duration
+
+    auto_offset, auto_corr = estimate_offset_by_motion(flow, gpx, cfg)
+    offset_used, offset_source = _resolve_offset(
+        metadata_offset, from_metadata, auto_offset, offset_override, use_auto
+    )
+
+    speeds_at_video = [
+        speed_at_video_time(float(t), offset_used, gpx.speeds_kmh) for t in range(duration)
+    ]
+    scores = score_seconds(speeds_at_video, flow, cfg)
+    segments = merge_segments(scores, cfg)
+
+    # fps for reporting (best-effort; 0.0 if unavailable)
+    fps = 0.0
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        cap.release()
+    except Exception:
+        pass
+
+    return Analysis(
+        flow_per_sec=flow, speeds_at_video=speeds_at_video, scores=scores,
+        segments=segments, offset_used=offset_used, offset_source=offset_source,
+        metadata_offset=metadata_offset, auto_offset=auto_offset,
+        auto_correlation=auto_corr, video_creation_time=video_start,
+        from_metadata=from_metadata, video_duration=float(duration), fps=fps,
+    )
