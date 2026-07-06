@@ -279,3 +279,32 @@ def test_concat_intro_and_reel_handles_silent_intro(tmp_path):
     audio_streams = [s for s in streams if s["codec_type"] == "audio"]
     assert len(video_streams) == 1
     assert len(audio_streams) == 1
+
+
+def test_refresh_if_needed_refreshes_when_expired(monkeypatch):
+    import strava_client
+    called = {}
+    def fake_post(url, data=None, timeout=None):
+        called["hit"] = True
+        class R:
+            def raise_for_status(self): pass
+            def json(self): return {"access_token": "new", "refresh_token": "r2",
+                                     "expires_at": 9999999999}
+        return R()
+    monkeypatch.setattr(strava_client.requests, "post", fake_post)
+    monkeypatch.setenv("STRAVA_CLIENT_ID", "1")
+    monkeypatch.setenv("STRAVA_CLIENT_SECRET", "s")
+    token = {"access_token": "old", "refresh_token": "r1", "expires_at": 0}
+    new = strava_client._refresh_if_needed(token, now_epoch=100)
+    assert called.get("hit") is True
+    assert new["access_token"] == "new"
+
+
+def test_refresh_if_needed_skips_when_valid(monkeypatch):
+    import strava_client
+    def boom(*a, **k):
+        raise AssertionError("should not refresh")
+    monkeypatch.setattr(strava_client.requests, "post", boom)
+    token = {"access_token": "ok", "refresh_token": "r", "expires_at": 10_000}
+    out = strava_client._refresh_if_needed(token, now_epoch=100)
+    assert out["access_token"] == "ok"
