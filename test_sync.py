@@ -753,3 +753,39 @@ def test_project_single_point_is_centered():
     coords = [(51.8, 4.0)]
     x, y = project_track(coords, w=100, h=100, pad=10)[0]
     assert abs(x - 50) < 1e-6 and abs(y - 50) < 1e-6
+
+
+from telemetry import TelemetrySample
+from config import Config
+import hud_renderer
+
+
+def _sample():
+    return TelemetrySample(speed_kmh=15.0, elevation_m=-1.0, slope_pct=1.0,
+                           hr_bpm=149, lat=51.8006, lon=4.001, seg_distance_km=0.29)
+
+
+def _alpha_region_nonzero(img, box):
+    crop = img.crop(box).getchannel("A")
+    return crop.getextrema()[1] > 0   # some non-transparent pixel
+
+
+def test_render_hud_frame_dimensions_and_regions():
+    W, H = 1920, 1080
+    coords = [(51.800, 4.000), (51.801, 4.000), (51.802, 4.002), (51.803, 4.004)]
+    img = hud_renderer.render_hud_frame(_sample(), "MTB Goeree Roggebos",
+                                        coords, (W, H), Config(), "05-07-2026")
+    assert img.size == (W, H)
+    assert img.mode == "RGBA"
+    assert _alpha_region_nonzero(img, (0, 0, 600, 200))            # top-left name/HR
+    assert _alpha_region_nonzero(img, (W - 400, 0, W, 200))        # top-right stats
+    assert _alpha_region_nonzero(img, (W - 360, H - 360, W, H))    # bottom-right speedo
+    assert _alpha_region_nonzero(img, (0, H - 320, 360, H))        # bottom-left minimap
+
+
+def test_render_hud_frame_without_hr_omits_bpm():
+    W, H = 1280, 720
+    s = _sample(); s.hr_bpm = None
+    coords = [(51.8, 4.0), (51.801, 4.001)]
+    img = hud_renderer.render_hud_frame(s, "Seg", coords, (W, H), Config(), "05-07-2026")
+    assert img.size == (W, H)   # renders without error when HR is None
