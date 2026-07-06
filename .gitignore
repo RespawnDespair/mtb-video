@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.strava_token.json
+*.mp4
+*.mov
+*.mp3
+*.aac
+!tests/**/*.mp4
+.DS_Store
