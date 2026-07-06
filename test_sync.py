@@ -873,3 +873,65 @@ def test_get_activity_streams_raises_when_unconfigured(monkeypatch):
     monkeypatch.setattr(strava_client, "is_configured", lambda: False)
     with pytest.raises(RuntimeError):
         strava_client.get_activity_streams("999")
+
+
+from telemetry import TelemetrySeries, telemetry_from_streams
+from highlight_detector import GpxData
+from datetime import datetime, timezone
+
+
+def _gpx_n(n):
+    return GpxData(
+        start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+        speeds_kmh=[1.0] * n, coords=[(51.8, 4.0)] * n,
+        elevations_m=[5.0] * n, hr_bpm=[90] * n, cum_distance_m=[float(i) for i in range(n)],
+        total_distance_km=0.0, elevation_gain_m=0.0, moving_time_s=0.0, first_coord=(51.8, 4.0))
+
+
+def _streams(n=3):
+    return {
+        "time": {"data": list(range(n))},
+        "velocity_smooth": {"data": [0.0, 5.0, 10.0][:n]},   # m/s
+        "heartrate": {"data": [120, 130, 140][:n]},
+        "watts": {"data": [100, 200, 300][:n]},
+        "altitude": {"data": [10.0, 11.0, 12.0][:n]},
+        "grade_smooth": {"data": [1.0, 2.0, 3.0][:n]},
+        "latlng": {"data": [[51.80, 4.0], [51.801, 4.0], [51.802, 4.0]][:n]},
+        "distance": {"data": [0.0, 10.0, 20.0][:n]},
+    }
+
+
+def test_telemetry_from_streams_maps_and_scales():
+    g = _gpx_n(3)
+    ts = telemetry_from_streams(_streams(3), g)
+    assert isinstance(ts, TelemetrySeries)
+    assert ts.speeds_kmh == [0.0, 18.0, 36.0]      # velocity_smooth * 3.6
+    assert ts.watts == [100.0, 200.0, 300.0]
+    assert ts.slopes_pct == [1.0, 2.0, 3.0]        # grade_smooth
+    assert ts.hr_bpm == [120.0, 130.0, 140.0]
+
+
+def test_telemetry_from_streams_missing_watts_falls_back():
+    g = _gpx_n(3)
+    s = _streams(3); del s["watts"]
+    del s["velocity_smooth"]
+    ts = telemetry_from_streams(s, g)
+    assert all(w is None for w in ts.watts)         # no watts -> all None
+    assert ts.speeds_kmh == g.speeds_kmh            # missing velocity -> GPX speed
+
+
+def test_sample_telemetry_from_stream_source_has_power_and_stream_slope():
+    from telemetry import sample_telemetry
+    g = _gpx_n(3)
+    ts = telemetry_from_streams(_streams(3), g)
+    s = sample_telemetry(ts, activity_time_s=1.0, segment_start_s=0.0)
+    assert abs(s.speed_kmh - 18.0) < 1e-6
+    assert s.power_w == 200.0
+    assert abs(s.slope_pct - 2.0) < 1e-6            # from grade_smooth, not computed
+
+
+def test_sample_telemetry_still_works_on_bare_gpx():
+    from telemetry import sample_telemetry
+    g = _gpx_n(3)
+    s = sample_telemetry(g, activity_time_s=1.0, segment_start_s=0.0)
+    assert s.power_w is None                         # GpxData has no watts
