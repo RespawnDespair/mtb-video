@@ -789,3 +789,44 @@ def test_render_hud_frame_without_hr_omits_bpm():
     coords = [(51.8, 4.0), (51.801, 4.001)]
     img = hud_renderer.render_hud_frame(s, "Seg", coords, (W, H), Config(), "05-07-2026")
     assert img.size == (W, H)   # renders without error when HR is None
+
+
+import shutil as _sh
+
+
+@pytest.mark.skipif(_sh.which("ffmpeg") is None or _sh.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_hud_overlay_renders_on_real_clip(tmp_path):
+    import subprocess
+    from datetime import datetime, timezone
+    from config import Config
+    from highlight_detector import GpxData
+    from segment_detector import SegmentClip
+    import video_editor
+
+    # a 2s synthetic clip
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:r=30:d=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)],
+                   check=True, capture_output=True)
+    n = 6
+    gpx = GpxData(
+        start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+        speeds_kmh=[10] * n, coords=[(51.8 + i * 1e-4, 4.0) for i in range(n)],
+        elevations_m=[float(i) for i in range(n)], hr_bpm=[120] * n,
+        cum_distance_m=[i * 10.0 for i in range(n)],
+        total_distance_km=0.05, elevation_gain_m=5.0, moving_time_s=float(n),
+        first_coord=(51.8, 4.0),
+    )
+    clip = SegmentClip(start=0.0, end=2.0, name="Test Segment",
+                       stats={"elapsed_s": 2.0, "speed_kmh": 10.0, "power_w": None, "hr_bpm": 120})
+    cfg = Config(hud_fps=10)
+    reel = video_editor.build_segment_reel(str(src), [clip], None, cfg,
+                                           gpx=gpx, offset_seconds=0.0)
+    import os
+    assert reel and os.path.getsize(reel) > 0
+    # ffprobe: one video stream present
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v",
+                          "-show_entries", "stream=codec_type", "-of", "csv=p=0", reel],
+                         capture_output=True, text=True)
+    assert "video" in out.stdout

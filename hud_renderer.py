@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import math
 
 from PIL import Image, ImageDraw, ImageFont
@@ -12,8 +13,8 @@ _WHITE = (255, 255, 255, 255)
 _GREY = (200, 200, 200, 255)
 
 
-def _font(cfg, size, bold=True):
-    path = cfg.overlay_font_path
+@functools.lru_cache(maxsize=None)
+def _load_font(path, size, bold):
     if bold:
         # try a Bold sibling next to the configured font; fall back to the base font
         bold_path = path.replace(".ttf", " Bold.ttf")
@@ -25,6 +26,10 @@ def _font(cfg, size, bold=True):
         return ImageFont.truetype(path, size)
     except OSError:
         return ImageFont.load_default()
+
+
+def _font(cfg, size, bold=True):
+    return _load_font(cfg.overlay_font_path, size, bold)
 
 
 def render_hud_frame(sample, segment_name, seg_coords, size, cfg, date_str):

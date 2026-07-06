@@ -196,7 +196,8 @@ def main() -> int:
             return 0
         from video_editor import build_segment_reel
         from intro_generator import build_final_video
-        reel = build_segment_reel(args.video, clips, args.music, cfg)
+        reel = build_segment_reel(args.video, clips, args.music, cfg,
+                                  gpx=gpx, offset_seconds=r.offset_used)
         try:
             build_final_video(reel, gpx, cfg, args.output, args)
         finally:

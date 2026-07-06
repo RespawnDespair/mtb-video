@@ -31,3 +31,8 @@ class Config:
     overlay_band_opacity: float = 0.5
     overlay_name_fontsize: int = 48
     overlay_stats_fontsize: int = 32
+
+    # HUD (segment-mode telemetry overlay)
+    hud_enabled: bool = True
+    hud_fps: int = 15
+    speedo_max_kmh: float = 45.0

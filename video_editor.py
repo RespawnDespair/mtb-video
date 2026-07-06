@@ -8,6 +8,8 @@ import tempfile
 from config import Config
 from highlight_detector import Segment
 from segment_detector import format_segment_stats
+from telemetry import sample_telemetry
+import hud_renderer
 
 
 def _escape_drawtext(text: str) -> str:
@@ -115,16 +117,70 @@ def build_highlight_reel(video_path, segments, music_path, cfg: Config) -> str:
     return _concat_and_music(part_paths, music_path, reel_duration, workdir, cfg)
 
 
-def build_segment_reel(video_path, clips, music_path, cfg: Config) -> str:
-    """Cut each segment clip with a lower-third overlay, concat, and mix music."""
+def _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg):
+    """Render the HUD PNG sequence for one clip; return the printf pattern path."""
+    import os
+    import subprocess, json
+    probe = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", video_path],
+        capture_output=True, text=True, check=True)
+    vs = next(s for s in json.loads(probe.stdout)["streams"] if s["codec_type"] == "video")
+    W, H = int(vs["width"]), int(vs["height"])
+
+    seg_start_activity = clip.start + offset_seconds
+    seg_coords = _segment_coords(gpx, clip, offset_seconds)
+    date_str = gpx.start_time.strftime("%d-%m-%Y")
+
+    hud_dir = os.path.join(workdir, "hud")
+    os.makedirs(hud_dir, exist_ok=True)
+    dur = clip.end - clip.start
+    n_frames = max(1, int(round(dur * cfg.hud_fps)))
+    for i in range(n_frames):
+        t_video = clip.start + (i / cfg.hud_fps)
+        activity_t = t_video + offset_seconds
+        sample = sample_telemetry(gpx, activity_t, seg_start_activity)
+        frame = hud_renderer.render_hud_frame(
+            sample, clip.name, seg_coords, (W, H), cfg, date_str)
+        frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
+    return os.path.join(hud_dir, "hud_%06d.png")
+
+
+def _segment_coords(gpx, clip, offset_seconds):
+    """The GPX coords covering the clip's activity-time window (for the minimap)."""
+    a0 = int(max(0, clip.start + offset_seconds))
+    a1 = int(min(len(gpx.coords) - 1, clip.end + offset_seconds))
+    pts = gpx.coords[a0:a1 + 1]
+    return pts if len(pts) >= 2 else gpx.coords[:2] or [(0.0, 0.0), (0.0, 0.0)]
+
+
+def build_segment_reel(video_path, clips, music_path, cfg: Config,
+                       gpx=None, offset_seconds=0.0) -> str:
+    """Cut each segment clip with an overlay (HUD if gpx given, else lower-third),
+    concat, and mix music."""
     check_ffmpeg()
     workdir = tempfile.mkdtemp(prefix="rhe_seg_")
     part_paths = []
+    use_hud = cfg.hud_enabled and gpx is not None
     for i, clip in enumerate(clips):
         part = os.path.join(workdir, f"seg_{i:03d}.mp4")
+        dur = clip.end - clip.start
+        if use_hud:
+            try:
+                pattern = _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-ss", str(clip.start), "-t", str(dur), "-i", video_path,
+                     "-framerate", str(cfg.hud_fps), "-i", pattern,
+                     "-filter_complex", "[0:v][1:v]overlay=0:0:shortest=1[v]",
+                     "-map", "[v]", "-map", "0:a?",
+                     "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", part],
+                    check=True, capture_output=True)
+                part_paths.append(part)
+                continue
+            except Exception as e:
+                print(f"[warn] HUD render failed ({e}); falling back to lower-third.")
+        # fallback / hud disabled: lower-third band
         stats = format_segment_stats(clip)
         vf = _lower_third_filter(clip.name, stats, cfg)
-        dur = clip.end - clip.start
         subprocess.run(
             ["ffmpeg", "-y", "-ss", str(clip.start), "-i", video_path,
              "-t", str(dur), "-vf", vf,

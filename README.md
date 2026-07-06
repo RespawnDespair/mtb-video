@@ -61,6 +61,12 @@ Segment timing uses the same sync offset as the rest of the pipeline
 (`VID_YYYYMMDD_HHMMSS`) is used as a sync source when `creation_time` metadata is
 missing.
 
+In segment mode each clip carries an animated telemetry **HUD** (segment name + heart
+rate, elevation + slope, a speedometer, and a segment minimap with a live position
+dot), drawn from the GPX per-second data. Disable it with `hud_enabled = False` in
+`config.py` to fall back to a simple lower-third caption. HUD frames render at
+`hud_fps` (default 15) and the speedometer scales to `speedo_max_kmh` (default 45).
+
 ### Fixing sync (copied videos with wrong timestamps)
 
 If the video's `creation_time` was altered by copying, the GPX↔video alignment is
