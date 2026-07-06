@@ -308,3 +308,10 @@ def test_refresh_if_needed_skips_when_valid(monkeypatch):
     token = {"access_token": "ok", "refresh_token": "r", "expires_at": 10_000}
     out = strava_client._refresh_if_needed(token, now_epoch=100)
     assert out["access_token"] == "ok"
+
+
+def test_garmin_not_configured_by_default(monkeypatch):
+    import garmin_client
+    monkeypatch.delenv("GARMIN_EMAIL", raising=False)
+    monkeypatch.delenv("GARMIN_PASSWORD", raising=False)
+    assert garmin_client.is_configured() is False
