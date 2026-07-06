@@ -13,6 +13,8 @@ import numpy as np
 
 from config import Config
 
+_MIN_CORR_OVERLAP = 10
+
 
 @dataclass
 class GpxData:
@@ -284,6 +286,7 @@ def estimate_offset_by_motion(flow_per_sec, gpx: GpxData, cfg: Config):
         return 0.0, 0.0
 
     # Candidate lags: video may start before the GPX (negative) or anywhere within it.
+    min_overlap = max(2, min(_MIN_CORR_OVERLAP, len(flow)))
     best_offset = 0.0
     best_corr = 0.0
     found = False
@@ -291,7 +294,7 @@ def estimate_offset_by_motion(flow_per_sec, gpx: GpxData, cfg: Config):
         # Overlap where both flow[t] and speeds[t + lag] are valid.
         t_start = max(0, -lag)
         t_end = min(n_flow, n_speed - lag)
-        if t_end - t_start < 2:
+        if t_end - t_start < min_overlap:
             continue
         fseg = flow[t_start:t_end]
         sseg = speeds[t_start + lag:t_end + lag]

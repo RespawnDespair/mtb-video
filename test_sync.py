@@ -348,3 +348,23 @@ def test_estimate_offset_flat_signal_does_not_crash():
     offset, corr = estimate_offset_by_motion([0.0, 0.0, 0.0], _gpx_with_speeds([0.0] * 10), cfg)
     assert isinstance(offset, float)
     assert corr == 0.0
+
+
+def test_estimate_offset_ignores_spurious_short_window():
+    # Well-supported true alignment: flow (8 samples) is a scaled, slightly
+    # noisy copy of speeds[3:11] -> the correct lag is +3, with a full
+    # 8-sample overlap window and corr ~0.98.
+    speeds = [1, 2, 0, 5, 20, 35, 40, 38, 10, 3, 0, 25, 30, 5, 0, 0, 0, 0, 0, 0]
+    flow = [0.5, 2.0, 3.6, 4.0, 3.7, 1.1, 0.2, 0.9]
+
+    # At the extreme lag -6, the overlap window shrinks to just 2 samples:
+    # flow[6:8] = [0.2, 0.9] vs speeds[0:2] = [1, 2]. Both pairs are strictly
+    # increasing, so Pearson correlation over these 2 points is a spurious,
+    # perfect 1.0 -- higher than the true lag's ~0.98. Without a minimum
+    # overlap guard (old `< 2` skip), this 2-sample window at lag=-6 would
+    # win outright over the true, well-supported lag=3.
+    cfg = Config()
+    offset, corr = estimate_offset_by_motion(flow, _gpx_with_speeds(speeds), cfg)
+
+    assert offset == 3.0
+    assert corr > 0.9
