@@ -48,6 +48,28 @@ def _mmss(seconds) -> str:
     return f"{total // 60}:{total % 60:02d}"
 
 
+def parse_pick(spec, count):
+    """Parse '1,3' into sorted valid 1-based indices within [1, count].
+
+    Returns None when spec is empty/None (meaning: keep all), otherwise the
+    de-duplicated, in-range indices (possibly an empty list if none are valid).
+    """
+    if not spec:
+        return None
+    picks = []
+    for part in str(spec).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            n = int(part)
+        except ValueError:
+            continue
+        if 1 <= n <= count and n not in picks:
+            picks.append(n)
+    return sorted(picks)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Generate an MTB highlight video from action-cam footage + GPX telemetry."
@@ -73,6 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=["auto", "segments", "flow"], default="auto",
                    help="Highlight source: auto (segments if available else flow), "
                         "segments (Strava segments only), or flow (speed/motion).")
+    p.add_argument("--pick", default=None,
+                   help="Comma-separated 1-based segment numbers to render (from the "
+                        "--dry-run list), e.g. --pick 1,3. Default: all segments.")
     return p
 
 
@@ -194,15 +219,26 @@ def main() -> int:
 
     if clips:  # segment mode
         from segment_detector import format_segment_stats
+        picks = parse_pick(getattr(args, "pick", None), len(clips))
+        numbered = list(enumerate(clips, 1))  # (number, clip) in chronological order
+
         if args.dry_run:
             print(f"Segment highlights ({len(clips)}):")
-            for c in clips:
-                print(f"  {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
-                      f"[{format_segment_stats(c)}]")
+            for n, c in numbered:
+                mark = "" if picks is None or n in picks else "   (skipped)"
+                print(f"  {n}. {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
+                      f"[{format_segment_stats(c)}]{mark}")
             return 0
+
+        if picks is not None:
+            numbered = [(n, c) for n, c in numbered if n in picks]
+            if not numbered:
+                print("--pick matched no segments; nothing to render.", file=sys.stderr)
+                return 1
+        clips = [c for _, c in numbered]
         print(f"Rendering {len(clips)} segment(s):", file=sys.stderr)
-        for c in clips:
-            print(f"  {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
+        for n, c in numbered:
+            print(f"  {n}. {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
                   f"[{format_segment_stats(c)}]", file=sys.stderr)
         from video_editor import build_segment_reel
         from intro_generator import build_final_video

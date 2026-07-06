@@ -830,3 +830,15 @@ def test_hud_overlay_renders_on_real_clip(tmp_path):
                           "-show_entries", "stream=codec_type", "-of", "csv=p=0", reel],
                          capture_output=True, text=True)
     assert "video" in out.stdout
+
+
+def test_parse_pick_selects_indices():
+    from main import parse_pick
+    assert parse_pick("1,3", 3) == [1, 3]
+    assert parse_pick(" 3 , 1 ", 3) == [1, 3]      # sorted + whitespace-tolerant
+    assert parse_pick("1,1,2", 3) == [1, 2]        # dedup
+    assert parse_pick("1,9", 3) == [1]             # out-of-range dropped
+    assert parse_pick("x,2", 3) == [2]             # non-numeric dropped
+    assert parse_pick(None, 3) is None             # None -> keep all
+    assert parse_pick("", 3) is None
+    assert parse_pick("9", 3) == []                # spec given but nothing valid
