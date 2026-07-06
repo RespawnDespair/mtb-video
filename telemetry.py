@@ -79,7 +79,12 @@ def telemetry_from_streams(streams: dict, gpx) -> TelemetrySeries:
     times = data("time") or list(range(n))
 
     vel = data("velocity_smooth")
-    speeds = [v * 3.6 for v in _resample(times, vel, n)] if vel else list(gpx.speeds_kmh)
+    if vel:
+        _rv = _resample(times, vel, n)
+        speeds = ([v * 3.6 for v in _rv] if any(v is not None for v in _rv)
+                  else list(gpx.speeds_kmh))
+    else:
+        speeds = list(gpx.speeds_kmh)
 
     alt = data("altitude")
     elevations = _resample(times, alt, n) if alt else list(gpx.elevations_m)
@@ -124,7 +129,7 @@ def sample_telemetry(source, activity_time_s, segment_start_s) -> TelemetrySampl
 
     slopes = getattr(source, "slopes_pct", None)
     if slopes and any(s is not None for s in slopes):
-        slope = _lerp_series(slopes, activity_time_s)
+        slope = max(-40.0, min(40.0, _lerp_series(slopes, activity_time_s)))
     else:
         slope = slope_pct(source, activity_time_s)
 

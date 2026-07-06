@@ -1001,3 +1001,20 @@ def test_segment_reel_with_stream_source_renders(tmp_path):
                                            telemetry_source=src_series)
     import os
     assert reel and os.path.getsize(reel) > 0
+
+
+def test_resample_interpolates_non_1hz():
+    from telemetry import _resample
+    # samples at t=0,2,4 -> per-second 0..4 should linearly interpolate
+    assert _resample([0, 2, 4], [0.0, 10.0, 20.0], 5) == [0.0, 5.0, 10.0, 15.0, 20.0]
+
+
+def test_resample_drops_none_entries():
+    from telemetry import _resample
+    # a mid-stream None is dropped; the gap is interpolated across neighbours
+    assert _resample([0, 1, 2], [10.0, None, 30.0], 3) == [10.0, 20.0, 30.0]
+
+
+def test_resample_all_none_returns_none_list():
+    from telemetry import _resample
+    assert _resample([0, 1, 2], [None, None, None], 3) == [None, None, None]
