@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
 
 from config import Config
@@ -70,7 +72,10 @@ def main() -> int:
     from video_editor import build_highlight_reel
     from intro_generator import build_final_video
     reel = build_highlight_reel(args.video, segments, args.music, cfg)
-    build_final_video(reel, gpx, cfg, args.output, args)
+    try:
+        build_final_video(reel, gpx, cfg, args.output, args)
+    finally:
+        shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
     print(f"Wrote {args.output}")
     return 0
 

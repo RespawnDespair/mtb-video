@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -237,7 +238,13 @@ def compute_optical_flow_per_second(video_path: str, cfg: Config) -> list[float]
 
 def detect_highlights(video_path: str, gpx: GpxData, cfg: Config):
     """Sync GPS to video, run optical flow, score, and merge into segments."""
-    video_start, _ = get_video_creation_time(video_path)
+    video_start, from_metadata = get_video_creation_time(video_path)
+    if not from_metadata:
+        print(
+            f"[warn] {video_path} has no creation_time metadata; "
+            "using file mtime for sync — segment alignment may be approximate.",
+            file=sys.stderr,
+        )
     offset = compute_offset_seconds(video_start, gpx.start_time)
     duration = int(round(get_video_duration(video_path)))
 

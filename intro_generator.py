@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -104,9 +105,12 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
 def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args) -> str:
     """Prepend the intro to the reel and re-encode the concat so params match."""
     workdir = tempfile.mkdtemp(prefix="rhe_final_")
-    intro = os.path.join(workdir, "intro.mp4")
-    extra = _gather_extra_stats(gpx, args)
-    build_intro_clip(gpx, cfg, intro, extra)
+    try:
+        intro = os.path.join(workdir, "intro.mp4")
+        extra = _gather_extra_stats(gpx, args)
+        build_intro_clip(gpx, cfg, intro, extra)
 
-    # Re-encode both into uniform params, then concat via filter (robust across cameras).
-    return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output)
+        # Re-encode both into uniform params, then concat via filter (robust across cameras).
+        return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
