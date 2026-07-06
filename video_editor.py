@@ -127,7 +127,7 @@ def build_highlight_reel(video_path, segments, music_path, cfg: Config) -> str:
     return _concat_and_music(part_paths, music_path, reel_duration, workdir, cfg)
 
 
-def _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg):
+def _render_hud_pngs(video_path, clip, source, gpx, offset_seconds, workdir, cfg):
     """Render the HUD PNG sequence for one clip; return the printf pattern path."""
     import os
     import subprocess, json
@@ -148,7 +148,7 @@ def _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg):
     for i in range(n_frames):
         t_video = clip.start + (i / cfg.hud_fps)
         activity_t = t_video + offset_seconds
-        sample = sample_telemetry(gpx, activity_t, seg_start_activity)
+        sample = sample_telemetry(source, activity_t, seg_start_activity)
         frame = hud_renderer.render_hud_frame(
             sample, clip.name, seg_coords, (W, H), cfg, date_str)
         frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
@@ -167,13 +167,14 @@ def _segment_coords(gpx, clip, offset_seconds):
 
 
 def build_segment_reel(video_path, clips, music_path, cfg: Config,
-                       gpx=None, offset_seconds=0.0) -> str:
+                       gpx=None, offset_seconds=0.0, telemetry_source=None) -> str:
     """Cut each segment clip with an overlay (HUD if gpx given, else lower-third),
     concat, and mix music."""
     check_ffmpeg()
     workdir = tempfile.mkdtemp(prefix="rhe_seg_")
     part_paths = []
     use_hud = cfg.hud_enabled and gpx is not None
+    source = telemetry_source if telemetry_source is not None else gpx
     n = len(clips)
     for i, clip in enumerate(clips):
         part = os.path.join(workdir, f"seg_{i:03d}.mp4")
@@ -181,7 +182,7 @@ def build_segment_reel(video_path, clips, music_path, cfg: Config,
         if use_hud:
             _log(f"[{i + 1}/{n}] {clip.name} ({dur:.1f}s) — HUD-frames renderen…")
             try:
-                pattern = _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg)
+                pattern = _render_hud_pngs(video_path, clip, source, gpx, offset_seconds, workdir, cfg)
                 _log(f"[{i + 1}/{n}] {clip.name} — overlay encoderen…")
                 subprocess.run(
                     ["ffmpeg", "-y", "-ss", str(clip.start), "-t", str(dur), "-i", video_path,

@@ -242,8 +242,21 @@ def main() -> int:
                   f"[{format_segment_stats(c)}]", file=sys.stderr)
         from video_editor import build_segment_reel
         from intro_generator import build_final_video
+        telemetry_source = None
+        try:
+            import strava_client
+            from telemetry import telemetry_from_streams
+            if strava_client.is_configured() and args.strava_activity_id:
+                streams = strava_client.get_activity_streams(args.strava_activity_id)
+                if streams:
+                    telemetry_source = telemetry_from_streams(streams, gpx)
+                    print("Telemetrie: Strava-streams", file=sys.stderr)
+        except Exception as e:
+            print(f"[warn] Strava streams unavailable ({e}); using GPX telemetry.",
+                  file=sys.stderr)
         reel = build_segment_reel(args.video, clips, args.music, cfg,
-                                  gpx=gpx, offset_seconds=r.offset_used)
+                                  gpx=gpx, offset_seconds=r.offset_used,
+                                  telemetry_source=telemetry_source)
         try:
             print("Intro + eindmontage renderen…", file=sys.stderr)
             build_final_video(reel, gpx, cfg, args.output, args)

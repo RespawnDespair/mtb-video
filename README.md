@@ -67,6 +67,11 @@ dot), drawn from the GPX per-second data. Disable it with `hud_enabled = False` 
 `config.py` to fall back to a simple lower-third caption. HUD frames render at
 `hud_fps` (default 15) and the speedometer scales to `speedo_max_kmh` (default 45).
 
+When Strava is configured and an activity id is given, the HUD is fed by Strava's
+per-second **streams** (smoothed speed, heart rate, power, grade) rather than
+values computed from the GPX — more accurate, and it adds a power (W) readout.
+Missing streams fall back to the GPX data per field.
+
 ### Fixing sync (copied videos with wrong timestamps)
 
 If the video's `creation_time` was altered by copying, the GPX↔video alignment is

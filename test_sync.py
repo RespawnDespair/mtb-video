@@ -963,3 +963,41 @@ def test_render_hud_frame_no_power_panel_when_none():
     # with no HR and no power, the top-left area under the name has no panel pixels
     band = img.crop((40, 165, 300, 230)).getchannel("A")
     assert band.getextrema()[1] == 0
+
+
+import shutil as _sh2
+
+
+@pytest.mark.skipif(_sh2.which("ffmpeg") is None or _sh2.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_segment_reel_with_stream_source_renders(tmp_path):
+    import subprocess
+    from datetime import datetime, timezone
+    from config import Config
+    from highlight_detector import GpxData
+    from segment_detector import SegmentClip
+    from telemetry import telemetry_from_streams
+    import video_editor
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:r=30:d=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)],
+                   check=True, capture_output=True)
+    n = 6
+    gpx = GpxData(start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+                  speeds_kmh=[10] * n, coords=[(51.8 + i * 1e-4, 4.0) for i in range(n)],
+                  elevations_m=[float(i) for i in range(n)], hr_bpm=[120] * n,
+                  cum_distance_m=[i * 10.0 for i in range(n)],
+                  total_distance_km=0.05, elevation_gain_m=5.0, moving_time_s=float(n),
+                  first_coord=(51.8, 4.0))
+    streams = {"time": {"data": list(range(n))},
+               "velocity_smooth": {"data": [5.0] * n},
+               "watts": {"data": [200] * n},
+               "grade_smooth": {"data": [3.0] * n}}
+    src_series = telemetry_from_streams(streams, gpx)
+    clip = SegmentClip(start=0.0, end=2.0, name="Test", stats={"elapsed_s": 2.0})
+    cfg = Config(hud_fps=10)
+    reel = video_editor.build_segment_reel(str(src), [clip], None, cfg,
+                                           gpx=gpx, offset_seconds=0.0,
+                                           telemetry_source=src_series)
+    import os
+    assert reel and os.path.getsize(reel) > 0
