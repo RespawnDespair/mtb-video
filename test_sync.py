@@ -691,3 +691,44 @@ def test_load_gpx_hr_none_when_absent(tmp_path):
     g = load_gpx(str(p))
     assert all(h is None for h in g.hr_bpm)
     assert len(g.elevations_m) == len(g.speeds_kmh)
+
+
+from telemetry import TelemetrySample, sample_telemetry, slope_pct
+from highlight_detector import GpxData
+
+
+def _gpx_series():
+    # 5 seconds: speed ramp, elevation +2m/s, hr ramp, distance 10m/s
+    return GpxData(
+        start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+        speeds_kmh=[0, 10, 20, 30, 40],
+        coords=[(51.8, 4.0), (51.8, 4.0), (51.8, 4.0), (51.8, 4.0), (51.8, 4.0)],
+        elevations_m=[0.0, 2.0, 4.0, 6.0, 8.0],
+        hr_bpm=[100, 110, 120, 130, 140],
+        cum_distance_m=[0.0, 10.0, 20.0, 30.0, 40.0],
+        total_distance_km=0.04, elevation_gain_m=8.0, moving_time_s=5.0,
+        first_coord=(51.8, 4.0),
+    )
+
+
+def test_sample_telemetry_interpolates():
+    g = _gpx_series()
+    s = sample_telemetry(g, activity_time_s=1.5, segment_start_s=1.0)
+    assert isinstance(s, TelemetrySample)
+    assert abs(s.speed_kmh - 15.0) < 1e-6        # between 10 and 20
+    assert abs(s.elevation_m - 3.0) < 1e-6       # between 2 and 4
+    assert abs(s.hr_bpm - 115.0) < 1e-6          # between 110 and 120
+    # distance within segment: cum(1.5)=15 minus cum(1.0)=10 -> 5 m -> 0.005 km
+    assert abs(s.seg_distance_km - 0.005) < 1e-6
+
+
+def test_slope_pct_known_grade():
+    g = _gpx_series()
+    # elevation +2 m/s, distance +10 m/s -> grade 20%
+    assert abs(slope_pct(g, activity_time_s=2.0, window_s=1) - 20.0) < 1e-6
+
+
+def test_sample_telemetry_clamps_out_of_range():
+    g = _gpx_series()
+    s = sample_telemetry(g, activity_time_s=100.0, segment_start_s=0.0)
+    assert s.speed_kmh == 40.0        # clamps to last
