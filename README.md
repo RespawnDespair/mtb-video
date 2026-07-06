@@ -41,6 +41,27 @@ python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
 Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
 Deeper tuning lives in `config.py`.
 
+### Fixing sync (copied videos with wrong timestamps)
+
+If the video's `creation_time` was altered by copying, the GPX↔video alignment is
+off and too much footage is kept. Diagnose and correct it:
+
+```bash
+# 1. Inspect: see the offset sources and aligned speed/motion sparklines (video time).
+python main.py --video ride.mp4 --gpx ride.gpx --inspect
+
+# 2a. Let cross-correlation pick the offset automatically for the render:
+python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --auto-sync
+
+# 2b. Or set the offset by hand (video_t maps to activity_t + offset):
+python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --sync-offset 137.5
+```
+
+`--inspect` shows the metadata offset, the auto-aligned offset with its correlation
+(confidence), and which one is selected. Precedence: `--sync-offset` > `--auto-sync`
+> file timestamp. A low correlation warning means auto-align is uncertain — compare
+the `speed` and `motion` sparklines (peaks should line up) and set `--sync-offset`.
+
 ## Optional: Strava stats
 
 1. Create an API app at https://www.strava.com/settings/api. Fill in:

@@ -6,8 +6,40 @@ import shutil
 import sys
 
 from config import Config
-from highlight_detector import load_gpx, detect_highlights
+from highlight_detector import load_gpx, detect_highlights, analyze_video
 from video_editor import check_ffmpeg
+
+_BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def render_sparkline(values, width: int) -> str:
+    """Map a numeric series to block characters, bucketed into `width` columns."""
+    if not values:
+        return ""
+    n = len(values)
+    cols = min(width, n)
+    # bucket means
+    buckets = []
+    for i in range(cols):
+        lo = (i * n) // cols
+        hi = max(lo + 1, ((i + 1) * n) // cols)
+        seg = values[lo:hi]
+        buckets.append(sum(seg) / len(seg))
+    lo_v = min(buckets)
+    hi_v = max(buckets)
+    if hi_v - lo_v < 1e-9:
+        return _BLOCKS[0] * cols
+    out = []
+    for v in buckets:
+        idx = int((v - lo_v) / (hi_v - lo_v) * (len(_BLOCKS) - 1))
+        out.append(_BLOCKS[idx])
+    return "".join(out)
+
+
+def resolve_offset_args(args):
+    """(offset_override, use_auto) from --sync-offset / --auto-sync."""
+    override = getattr(args, "sync_offset", None)
+    return (override, bool(getattr(args, "auto_sync", False)))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--strava", action="store_true", help="Enrich intro with Strava stats.")
     p.add_argument("--strava-activity-id", help="Strava activity ID for stats.")
     p.add_argument("--garmin", action="store_true", help="Enrich intro with Garmin stats.")
+    p.add_argument("--inspect", action="store_true",
+                   help="Print a sync/segment diagnosis report and render nothing.")
+    p.add_argument("--sync-offset", type=float, default=None,
+                   help="Force the sync offset in seconds (video_t -> activity_t + offset).")
+    p.add_argument("--auto-sync", action="store_true",
+                   help="Use motion/GPS cross-correlation to pick the offset for rendering.")
     return p
 
 
@@ -52,14 +90,64 @@ def print_segments(segments, scores) -> None:
     print(f"\nTotal kept: {total:.1f}s across {len(segments)} segment(s).")
 
 
+def print_inspection(analysis, gpx) -> None:
+    a = analysis
+    local = a.video_creation_time.astimezone()
+    print("=== GPX ===")
+    print(f"  activity start : {gpx.start_time.isoformat()} (UTC)")
+    print(f"  duration       : {len(gpx.speeds_kmh)} s")
+    print(f"  distance       : {gpx.total_distance_km:.2f} km")
+    print(f"  elevation gain : {gpx.elevation_gain_m:.0f} m")
+    print(f"  moving time    : {gpx.moving_time_s / 60:.1f} min")
+    print("\n=== Video ===")
+    print(f"  creation_time  : {a.video_creation_time.isoformat()} "
+          f"({'metadata' if a.from_metadata else 'file mtime — unreliable'})")
+    print(f"  local time     : {local.isoformat()}")
+    print(f"  duration       : {a.video_duration:.0f} s   fps: {a.fps:.2f}")
+    print("\n=== Sync ===")
+    print(f"  metadata offset: {a.metadata_offset:+.1f} s")
+    print(f"  auto offset    : {a.auto_offset:+.1f} s   (correlation {a.auto_correlation:+.2f})")
+    print(f"  USING          : {a.offset_used:+.1f} s   (source: {a.offset_source})")
+    if abs(a.auto_correlation) < 0.3:
+        print("  ! low correlation — auto-align is uncertain; verify the sparklines "
+              "or set --sync-offset manually.")
+
+    width = 100
+    dur = int(a.video_duration)
+    speed_row = a.speeds_at_video[:dur]
+    flow_row = a.flow_per_sec[:dur]
+    score_row = a.scores[:dur]
+    print("\n=== Aligned on VIDEO time (offset applied) ===")
+    print(f"  0s{' ' * (width - 6)}{dur}s")
+    print(f"  speed  {render_sparkline(speed_row, width)}")
+    print(f"  motion {render_sparkline(flow_row, width)}")
+    print(f"  score  {render_sparkline(score_row, width)}")
+    total = sum(seg.end - seg.start for seg in a.segments)
+    print(f"\n  segments kept: {len(a.segments)}  ({total:.0f}s of {dur}s)")
+    for seg in a.segments:
+        print(f"    {seg.start:7.1f}s -> {seg.end:7.1f}s  score={seg.score:0.2f}")
+
+
 def main() -> int:
     args = build_parser().parse_args()
     check_ffmpeg()
     cfg = build_config_from_args(args)
 
     gpx = load_gpx(args.gpx)
-    segments, scores = detect_highlights(args.video, gpx, cfg)
+    offset_override, use_auto = resolve_offset_args(args)
+    analysis = analyze_video(args.video, gpx, cfg,
+                             offset_override=offset_override, use_auto=use_auto)
 
+    if analysis.offset_source == "mtime":
+        print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
+              "for sync — alignment may be approximate. Use --inspect / --auto-sync / "
+              "--sync-offset to correct it.", file=sys.stderr)
+
+    if args.inspect:
+        print_inspection(analysis, gpx)
+        return 0
+
+    segments, scores = analysis.segments, analysis.scores
     if args.dry_run:
         print_segments(segments, scores)
         return 0
@@ -68,13 +156,13 @@ def main() -> int:
         print("No highlight segments detected; nothing to render.", file=sys.stderr)
         return 1
 
-    # Stages 2 & 3 wired in Task 8.
     from video_editor import build_highlight_reel
     from intro_generator import build_final_video
     reel = build_highlight_reel(args.video, segments, args.music, cfg)
     try:
         build_final_video(reel, gpx, cfg, args.output, args)
     finally:
+        import os, shutil
         shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
     print(f"Wrote {args.output}")
     return 0

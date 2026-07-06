@@ -392,3 +392,32 @@ def test_resolve_offset_metadata_default():
 def test_resolve_offset_mtime_source_when_not_from_metadata():
     used, src = _resolve_offset(10.0, False, 4.0, offset_override=None, use_auto=False)
     assert used == 10.0 and src == "mtime"
+
+
+from main import render_sparkline, resolve_offset_args
+
+
+def test_render_sparkline_min_and_max_blocks():
+    s = render_sparkline([0.0, 10.0], width=2)
+    assert s[0] == "▁"      # min -> lowest block
+    assert s[-1] == "█"     # max -> highest block
+
+
+def test_render_sparkline_empty_is_safe():
+    assert render_sparkline([], width=10) == ""
+
+
+def test_render_sparkline_flat_series():
+    s = render_sparkline([5.0, 5.0, 5.0], width=3)
+    assert set(s) == {"▁"}   # flat -> all lowest block
+    assert len(s) == 3
+
+
+def test_resolve_offset_args_manual():
+    class A: sync_offset = 12.5; auto_sync = True
+    assert resolve_offset_args(A()) == (12.5, True)
+
+
+def test_resolve_offset_args_default():
+    class A: sync_offset = None; auto_sync = False
+    assert resolve_offset_args(A()) == (None, False)
