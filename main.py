@@ -42,6 +42,12 @@ def resolve_offset_args(args):
     return (override, bool(getattr(args, "auto_sync", False)))
 
 
+def _mmss(seconds) -> str:
+    """Format a video time in seconds as M:SS (e.g. 250.0 -> '4:10')."""
+    total = int(round(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Generate an MTB highlight video from action-cam footage + GPX telemetry."
@@ -187,17 +193,16 @@ def main() -> int:
             return 1
 
     if clips:  # segment mode
+        from segment_detector import format_segment_stats
         if args.dry_run:
             print(f"Segment highlights ({len(clips)}):")
             for c in clips:
-                from segment_detector import format_segment_stats
-                print(f"  {c.start:7.1f}s -> {c.end:7.1f}s  {c.name}  "
+                print(f"  {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
                       f"[{format_segment_stats(c)}]")
             return 0
-        from segment_detector import format_segment_stats
         print(f"Rendering {len(clips)} segment(s):", file=sys.stderr)
         for c in clips:
-            print(f"  {c.start:7.1f}s -> {c.end:7.1f}s  {c.name}  "
+            print(f"  {_mmss(c.start):>6} -> {_mmss(c.end):>6}  {c.name}  "
                   f"[{format_segment_stats(c)}]", file=sys.stderr)
         from video_editor import build_segment_reel
         from intro_generator import build_final_video
