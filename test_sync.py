@@ -596,3 +596,42 @@ def test_format_segment_stats_omits_missing():
     assert "16.3 km/u" in s
     assert "153 bpm" in s
     assert "W" not in s         # power omitted when None
+
+
+from video_editor import _escape_drawtext, _lower_third_filter
+
+
+def test_escape_drawtext_escapes_specials():
+    out = _escape_drawtext("Rider's: 100% cool\\bad")
+    assert "\\'" in out          # single quote escaped
+    assert "\\:" in out          # colon escaped
+    assert "\\%" in out or "%%" in out  # percent escaped
+
+
+def test_lower_third_filter_contains_band_and_texts():
+    cfg = Config()
+    f = _lower_third_filter("MTB Goeree Roggebos", "4:10 · 16.3 km/u · 175 W", cfg)
+    assert "drawbox" in f
+    assert "drawtext" in f
+    assert "Goeree" in f          # name present (escaped form still contains it)
+    assert "16.3" in f            # stats line present
+
+
+import shutil as _shutil
+
+
+@pytest.mark.skipif(_shutil.which("ffmpeg") is None or _shutil.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_lower_third_renders_on_real_clip(tmp_path):
+    import subprocess, video_editor
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i",
+                    "testsrc=s=640x360:d=2", "-c:v", "libx264", "-pix_fmt",
+                    "yuv420p", str(src)], check=True, capture_output=True)
+    out = tmp_path / "ov.mp4"
+    vf = video_editor._lower_third_filter("Test Segment", "1:23 · 20.0 km/u", Config())
+    r = subprocess.run(["ffmpeg", "-y", "-i", str(src), "-vf", vf,
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)],
+                       capture_output=True)
+    assert r.returncode == 0, r.stderr.decode()[-500:]
+    assert out.exists() and out.stat().st_size > 0
