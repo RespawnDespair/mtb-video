@@ -77,3 +77,19 @@ def get_segment_efforts(activity_id: str) -> list:
                         params={"include_all_efforts": True}, timeout=30)
     resp.raise_for_status()
     return resp.json().get("segment_efforts", []) or []
+
+
+_STREAM_KEYS = "time,latlng,distance,altitude,velocity_smooth,heartrate,watts,grade_smooth"
+
+
+def get_activity_streams(activity_id: str) -> dict:
+    """Return the activity's per-second streams keyed by type."""
+    if not is_configured():
+        raise RuntimeError("Strava not configured (.strava_token.json + env vars).")
+    token = _refresh_if_needed(_load_token(), now_epoch=time.time())
+    _save_token(token)
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    resp = requests.get(f"{_API}/activities/{activity_id}/streams", headers=headers,
+                        params={"keys": _STREAM_KEYS, "key_by_type": True}, timeout=30)
+    resp.raise_for_status()
+    return resp.json() or {}

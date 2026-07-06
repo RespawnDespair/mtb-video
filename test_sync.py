@@ -842,3 +842,34 @@ def test_parse_pick_selects_indices():
     assert parse_pick(None, 3) is None             # None -> keep all
     assert parse_pick("", 3) is None
     assert parse_pick("9", 3) == []                # spec given but nothing valid
+
+
+def test_get_activity_streams_requests_keys(monkeypatch):
+    import strava_client
+    cap = {}
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    monkeypatch.setattr(strava_client, "_load_token",
+                        lambda: {"access_token": "t", "refresh_token": "r", "expires_at": 9e12})
+    monkeypatch.setattr(strava_client, "_refresh_if_needed", lambda tok, now_epoch: tok)
+    monkeypatch.setattr(strava_client, "_save_token", lambda tok: None)
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"velocity_smooth": {"data": [1, 2, 3]}}
+    def fake_get(url, headers=None, params=None, timeout=None):
+        cap["url"] = url; cap["params"] = params
+        return R()
+    monkeypatch.setattr(strava_client.requests, "get", fake_get)
+
+    out = strava_client.get_activity_streams("999")
+    assert out == {"velocity_smooth": {"data": [1, 2, 3]}}
+    assert "999" in cap["url"] and "streams" in cap["url"]
+    assert cap["params"].get("key_by_type") in (True, "true", 1)
+    assert "velocity_smooth" in cap["params"].get("keys", "")
+
+
+def test_get_activity_streams_raises_when_unconfigured(monkeypatch):
+    import strava_client, pytest
+    monkeypatch.setattr(strava_client, "is_configured", lambda: False)
+    with pytest.raises(RuntimeError):
+        strava_client.get_activity_streams("999")
