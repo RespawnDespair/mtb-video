@@ -511,10 +511,6 @@ def _font(cfg, size, bold=True):
         return ImageFont.load_default()
 
 
-def _fmt_time(km):  # unused placeholder removed
-    raise NotImplementedError
-
-
 def render_hud_frame(sample, segment_name, seg_coords, size, cfg, date_str):
     """Return a transparent RGBA HUD frame for one telemetry sample."""
     W, H = size
@@ -673,7 +669,8 @@ def test_hud_overlay_renders_on_real_clip(tmp_path):
     cfg = Config(hud_fps=10)
     reel = video_editor.build_segment_reel(str(src), [clip], None, cfg,
                                            gpx=gpx, offset_seconds=0.0)
-    assert reel and _sh.os.path.getsize(reel) > 0
+    import os
+    assert reel and os.path.getsize(reel) > 0
     # ffprobe: one video stream present
     out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v",
                           "-show_entries", "stream=codec_type", "-of", "csv=p=0", reel],
@@ -696,8 +693,6 @@ Add the PNG-sequence renderer:
 def _render_hud_pngs(video_path, clip, gpx, offset_seconds, workdir, cfg):
     """Render the HUD PNG sequence for one clip; return the printf pattern path."""
     import os
-    from highlight_detector import get_video_duration  # not needed but explicit deps ok
-    # video resolution
     import subprocess, json
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", video_path],
