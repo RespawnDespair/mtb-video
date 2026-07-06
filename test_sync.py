@@ -477,3 +477,34 @@ def test_resolve_sync_offset_no_flow_when_not_auto(monkeypatch, tmp_path):
     assert isinstance(r, ResolvedOffset)
     assert r.offset_source == "metadata"
     assert called["flow"] == 0        # optical flow NOT computed without --auto-sync
+
+
+def test_get_segment_efforts_uses_include_all_efforts(monkeypatch):
+    import strava_client
+    captured = {}
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    monkeypatch.setattr(strava_client, "_load_token",
+                        lambda: {"access_token": "t", "refresh_token": "r", "expires_at": 9e12})
+    monkeypatch.setattr(strava_client, "_refresh_if_needed", lambda tok, now_epoch: tok)
+    monkeypatch.setattr(strava_client, "_save_token", lambda tok: None)
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"segment_efforts": [{"name": "seg1"}]}
+    def fake_get(url, headers=None, params=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = params
+        return R()
+    monkeypatch.setattr(strava_client.requests, "get", fake_get)
+
+    efforts = strava_client.get_segment_efforts("12345")
+    assert efforts == [{"name": "seg1"}]
+    assert "12345" in captured["url"]
+    assert captured["params"].get("include_all_efforts") in (True, "true", 1)
+
+
+def test_get_segment_efforts_raises_when_unconfigured(monkeypatch):
+    import strava_client, pytest
+    monkeypatch.setattr(strava_client, "is_configured", lambda: False)
+    with pytest.raises(RuntimeError):
+        strava_client.get_segment_efforts("12345")

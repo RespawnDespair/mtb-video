@@ -64,3 +64,16 @@ def get_activity_stats(activity_id: str | None) -> dict:
         "avg_power": a.get("average_watts"),
         "max_speed_kmh": (a.get("max_speed") or 0) * 3.6,
     }
+
+
+def get_segment_efforts(activity_id: str) -> list:
+    """Return the activity's segment_efforts (each with timing + stats)."""
+    if not is_configured():
+        raise RuntimeError("Strava not configured (.strava_token.json + env vars).")
+    token = _refresh_if_needed(_load_token(), now_epoch=time.time())
+    _save_token(token)
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    resp = requests.get(f"{_API}/activities/{activity_id}", headers=headers,
+                        params={"include_all_efforts": True}, timeout=30)
+    resp.raise_for_status()
+    return resp.json().get("segment_efforts", []) or []
