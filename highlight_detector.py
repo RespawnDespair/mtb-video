@@ -55,9 +55,10 @@ def load_gpx(path: str) -> GpxData:
     start = _to_utc(points[0].time)
     duration = int((_to_utc(points[-1].time) - start).total_seconds())
 
-    # Per-second series, forward-filled from the nearest earlier point.
-    speeds = [0.0] * (duration + 1)
-    coords = [(points[0].latitude, points[0].longitude)] * (duration + 1)
+    # Per-second series. Seconds with no trackpoint start as None and are
+    # forward-filled below from the nearest earlier known value.
+    speeds: list[float | None] = [None] * (duration + 1)
+    coords: list[tuple[float, float] | None] = [None] * (duration + 1)
 
     total_distance_m = 0.0
     elevation_gain_m = 0.0
@@ -80,13 +81,24 @@ def load_gpx(path: str) -> GpxData:
                 gain = p.elevation - prev.elevation
                 if gain > 0:
                     elevation_gain_m += gain
+        else:
+            speeds[sec] = 0.0
+            coords[sec] = (p.latitude, p.longitude)
         prev = p
 
-    # forward-fill gaps in speed/coords
-    for i in range(1, len(speeds)):
-        if speeds[i] == 0.0 and speeds[i - 1] != 0.0:
-            # leave true standstills as 0; only fill obvious gaps between samples
-            pass
+    # Forward-fill seconds with no trackpoint from the last known value,
+    # seeded with speed 0.0 and the first point's coord so index 0 is defined.
+    last_speed = 0.0
+    last_coord = (points[0].latitude, points[0].longitude)
+    for i in range(len(speeds)):
+        if speeds[i] is None:
+            speeds[i] = last_speed
+        else:
+            last_speed = speeds[i]
+        if coords[i] is None:
+            coords[i] = last_coord
+        else:
+            last_coord = coords[i]
 
     return GpxData(
         start_time=start,

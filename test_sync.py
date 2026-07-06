@@ -94,3 +94,30 @@ def test_load_gpx_parses_synthetic_fixture(tmp_path):
     assert data.total_distance_km > 0.0
     # second 1 should have a plausible speed (~11m in 1s ≈ 40 km/h)
     assert data.speeds_kmh[1] > 0.0
+
+
+GAPPED_GPX = textwrap.dedent("""\
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><trkseg>
+    <trkpt lat="46.0000000" lon="7.0000000"><ele>1000</ele><time>2026-07-06T10:00:00Z</time></trkpt>
+    <trkpt lat="46.0001000" lon="7.0000000"><ele>1005</ele><time>2026-07-06T10:00:01Z</time></trkpt>
+    <trkpt lat="46.0003000" lon="7.0000000"><ele>1015</ele><time>2026-07-06T10:00:03Z</time></trkpt>
+  </trkseg></trk>
+</gpx>
+""")
+
+
+def test_load_gpx_forward_fills_gaps(tmp_path):
+    gpx_file = tmp_path / "ride.gpx"
+    gpx_file.write_text(GAPPED_GPX)
+
+    data = load_gpx(str(gpx_file))
+
+    # second 2 has no trackpoint (points only at t=0,1,3); it should be
+    # forward-filled from second 1's real values, not reset to the
+    # (0.0 speed, first-point coord) placeholder.
+    assert data.coords[2] == data.coords[1]
+    assert data.speeds_kmh[2] == data.speeds_kmh[1]
+    assert data.coords[1] != data.coords[0]
+    assert data.speeds_kmh[1] != 0.0
