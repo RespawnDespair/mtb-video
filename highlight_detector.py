@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -109,3 +112,29 @@ def load_gpx(path: str) -> GpxData:
         moving_time_s=moving_time_s,
         first_coord=(points[0].latitude, points[0].longitude),
     )
+
+
+def _ffprobe_json(path: str) -> dict:
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_format", "-show_streams", path],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def get_video_creation_time(path: str) -> tuple[datetime, bool]:
+    """Return (utc creation time, from_metadata). Falls back to file mtime."""
+    info = _ffprobe_json(path)
+    tag = info.get("format", {}).get("tags", {}).get("creation_time")
+    if tag:
+        # ffprobe emits ISO 8601, usually ending in 'Z'
+        dt = datetime.fromisoformat(tag.replace("Z", "+00:00"))
+        return _to_utc(dt), True
+    mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+    return mtime, False
+
+
+def get_video_duration(path: str) -> float:
+    info = _ffprobe_json(path)
+    return float(info.get("format", {}).get("duration", 0.0))

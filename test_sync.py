@@ -121,3 +121,43 @@ def test_load_gpx_forward_fills_gaps(tmp_path):
     assert data.speeds_kmh[2] == data.speeds_kmh[1]
     assert data.coords[1] != data.coords[0]
     assert data.speeds_kmh[1] != 0.0
+
+
+import pytest
+
+from video_editor import check_ffmpeg
+
+
+def test_check_ffmpeg_ok_when_installed():
+    # On this dev machine ffmpeg is installed via Homebrew; should not raise.
+    check_ffmpeg()
+
+
+def test_check_ffmpeg_error_message(monkeypatch):
+    import video_editor
+    monkeypatch.setattr(video_editor.shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeError) as exc:
+        check_ffmpeg()
+    assert "brew install ffmpeg" in str(exc.value)
+
+
+def test_creation_time_from_metadata(monkeypatch):
+    import highlight_detector
+    monkeypatch.setattr(
+        highlight_detector, "_ffprobe_json",
+        lambda path: {"format": {"tags": {"creation_time": "2026-07-06T10:00:05.000000Z"}}},
+    )
+    dt, from_meta = highlight_detector.get_video_creation_time("fake.mp4")
+    assert from_meta is True
+    assert dt.tzinfo is not None
+    assert dt.hour == 10 and dt.second == 5
+
+
+def test_creation_time_falls_back_to_mtime(monkeypatch, tmp_path):
+    import highlight_detector
+    f = tmp_path / "fake.mp4"
+    f.write_text("x")
+    monkeypatch.setattr(highlight_detector, "_ffprobe_json", lambda path: {"format": {"tags": {}}})
+    dt, from_meta = highlight_detector.get_video_creation_time(str(f))
+    assert from_meta is False
+    assert dt.tzinfo is not None
