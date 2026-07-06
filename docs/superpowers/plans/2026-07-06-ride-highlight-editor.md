@@ -46,7 +46,7 @@
 - Test: `test_sync.py` (start the file; more added later)
 
 **Interfaces:**
-- Produces: `Config` dataclass with fields `min_speed_kmh: float=3.0`, `score_cutoff: float=0.35`, `gps_weight: float=0.6`, `flow_weight: float=0.4`, `original_audio_volume: float=0.4`, `music_volume: float=1.0`, `fade_out_seconds: float=3.0`, `intro_duration: float=7.0`, `cut_mode: str="reencode"`, `flow_sample_fps: float=2.0`, `min_segment_seconds: float=2.0`, `gap_bridge_seconds: float=2.0`.
+- Produces: `Config` dataclass with fields `min_speed_kmh: float=3.0`, `score_cutoff: float=0.35`, `gps_weight: float=0.6`, `flow_weight: float=0.4`, `speed_reference_kmh: float=35.0`, `flow_reference: float=3.0`, `original_audio_volume: float=0.4`, `music_volume: float=1.0`, `fade_out_seconds: float=3.0`, `intro_duration: float=7.0`, `cut_mode: str="reencode"`, `flow_sample_fps: float=2.0`, `min_segment_seconds: float=2.0`, `gap_bridge_seconds: float=2.0`.
 
 - [ ] **Step 1: Write `.gitignore`**
 
@@ -120,6 +120,8 @@ class Config:
     score_cutoff: float = 0.35          # per-second interest score threshold [0,1]
     gps_weight: float = 0.6             # weight of GPS speed in interest score
     flow_weight: float = 0.4            # weight of optical flow in interest score
+    speed_reference_kmh: float = 35.0   # speed mapped to 1.0 (absolute scaling)
+    flow_reference: float = 3.0         # flow magnitude mapped to 1.0
     flow_sample_fps: float = 2.0        # frames sampled per second for optical flow
     min_segment_seconds: float = 2.0    # discard segments shorter than this
     gap_bridge_seconds: float = 2.0     # merge kept segments separated by <= this
@@ -610,29 +612,23 @@ class Segment:
     score: float
 
 
-def _normalize(values: list[float]) -> np.ndarray:
-    arr = np.asarray(values, dtype=float)
-    if arr.size == 0:
-        return arr
-    lo, hi = float(arr.min()), float(arr.max())
-    if hi - lo < 1e-9:
-        return np.zeros_like(arr)
-    return (arr - lo) / (hi - lo)
-
-
 def score_seconds(speeds_at_video_secs, flow_per_sec, cfg: Config) -> list[float]:
-    """Combine per-second GPS speed and optical flow into interest scores [0,1]."""
+    """Combine per-second GPS speed and optical flow into interest scores [0,1].
+
+    Uses absolute reference scaling (not whole-ride min/max) so scores are
+    comparable across rides and well-defined for any series length.
+    """
     n = min(len(speeds_at_video_secs), len(flow_per_sec))
     speeds = list(speeds_at_video_secs[:n])
     flows = list(flow_per_sec[:n])
-    norm_speed = _normalize(speeds)
-    norm_flow = _normalize(flows)
     scores = []
     for i in range(n):
         if speeds[i] < cfg.min_speed_kmh:
             scores.append(0.0)  # standstill dropped outright
             continue
-        s = cfg.gps_weight * float(norm_speed[i]) + cfg.flow_weight * float(norm_flow[i])
+        speed_norm = min(1.0, speeds[i] / cfg.speed_reference_kmh)
+        flow_norm = min(1.0, flows[i] / cfg.flow_reference)
+        s = cfg.gps_weight * speed_norm + cfg.flow_weight * flow_norm
         scores.append(max(0.0, min(1.0, s)))
     return scores
 
