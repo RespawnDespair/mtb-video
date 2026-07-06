@@ -508,3 +508,91 @@ def test_get_segment_efforts_raises_when_unconfigured(monkeypatch):
     monkeypatch.setattr(strava_client, "is_configured", lambda: False)
     with pytest.raises(RuntimeError):
         strava_client.get_segment_efforts("12345")
+
+
+from datetime import datetime, timezone, timedelta
+from config import Config
+from segment_detector import (
+    SegmentEffort, parse_efforts, is_noteworthy, SegmentClip,
+    efforts_to_clips, format_segment_stats,
+)
+
+
+def _effort(name, start_offset_s, elapsed, dist=1000.0, watts=None, hr=None,
+            pr_rank=None, achievements=None, starred=False):
+    gpx_start = datetime(2026, 7, 5, 12, 32, 57, tzinfo=timezone.utc)
+    return SegmentEffort(
+        name=name, start_date=gpx_start + timedelta(seconds=start_offset_s),
+        elapsed_time=elapsed, distance_m=dist, average_watts=watts,
+        average_heartrate=hr, pr_rank=pr_rank,
+        has_achievement=bool(achievements), starred=starred,
+    )
+
+
+def test_parse_efforts_maps_fields():
+    raw = [{
+        "name": "MTB Goeree Roggebos", "start_date": "2026-07-05T12:40:00Z",
+        "elapsed_time": 250, "distance": 1130.0, "average_watts": 175.0,
+        "average_heartrate": 153.0, "pr_rank": 1, "achievements": [{"rank": 1}],
+        "segment": {"starred": True},
+    }]
+    efforts = parse_efforts(raw)
+    assert len(efforts) == 1
+    e = efforts[0]
+    assert e.name == "MTB Goeree Roggebos"
+    assert e.start_date == datetime(2026, 7, 5, 12, 40, 0, tzinfo=timezone.utc)
+    assert e.elapsed_time == 250 and e.distance_m == 1130.0
+    assert e.average_watts == 175.0 and e.pr_rank == 1
+    assert e.has_achievement is True and e.starred is True
+
+
+def test_is_noteworthy():
+    assert is_noteworthy(_effort("a", 0, 60, achievements=[{"rank": 2}]))
+    assert is_noteworthy(_effort("b", 0, 60, pr_rank=2))
+    assert is_noteworthy(_effort("c", 0, 60, starred=True))
+    assert not is_noteworthy(_effort("d", 0, 60))
+
+
+def test_efforts_to_clips_maps_to_video_time_and_filters():
+    gpx_start = datetime(2026, 7, 5, 12, 32, 57, tzinfo=timezone.utc)
+    cfg = Config(min_segment_seconds=2.0)
+    # video started 660s into the activity (offset 660); video is 300s long.
+    offset = 660.0
+    efforts = [
+        # noteworthy, starts at activity 700s -> video 40s, 100s long -> [40,140]
+        _effort("in-window", 700, 100, starred=True),
+        # noteworthy but before the video window (activity 100s -> video -560) -> dropped
+        _effort("too-early", 100, 50, starred=True),
+        # not noteworthy -> dropped
+        _effort("boring", 720, 80),
+    ]
+    clips = efforts_to_clips(efforts, gpx_start, offset, video_duration=300.0, cfg=cfg)
+    assert len(clips) == 1
+    assert clips[0].name == "in-window"
+    assert clips[0].start == 40.0
+    assert clips[0].end == 140.0
+
+
+def test_efforts_to_clips_clamps_and_sorts():
+    gpx_start = datetime(2026, 7, 5, 12, 32, 57, tzinfo=timezone.utc)
+    cfg = Config(min_segment_seconds=2.0)
+    offset = 0.0
+    efforts = [
+        _effort("second", 50, 20, starred=True),   # [50,70]
+        _effort("first", 10, 20, starred=True),     # [10,30]
+        _effort("overhang", 290, 40, starred=True), # [290,330] -> clamped end 300
+    ]
+    clips = efforts_to_clips(efforts, gpx_start, offset, video_duration=300.0, cfg=cfg)
+    assert [c.name for c in clips] == ["first", "second", "overhang"]
+    assert clips[-1].end == 300.0
+
+
+def test_format_segment_stats_omits_missing():
+    clip = SegmentClip(start=0.0, end=250.0, name="X",
+                       stats={"elapsed_s": 250.0, "speed_kmh": 16.3,
+                              "power_w": None, "hr_bpm": 153})
+    s = format_segment_stats(clip)
+    assert "4:10" in s          # 250s -> 4:10
+    assert "16.3 km/u" in s
+    assert "153 bpm" in s
+    assert "W" not in s         # power omitted when None
