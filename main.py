@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from config import Config
-from highlight_detector import load_gpx, detect_highlights, analyze_video
+from highlight_detector import load_gpx, analyze_video
 from video_editor import check_ffmpeg
 
 _BLOCKS = "▁▂▃▄▅▆▇█"
@@ -108,9 +108,9 @@ def print_inspection(analysis, gpx) -> None:
     print(f"  metadata offset: {a.metadata_offset:+.1f} s")
     print(f"  auto offset    : {a.auto_offset:+.1f} s   (correlation {a.auto_correlation:+.2f})")
     print(f"  USING          : {a.offset_used:+.1f} s   (source: {a.offset_source})")
-    if abs(a.auto_correlation) < 0.3:
-        print("  ! low correlation — auto-align is uncertain; verify the sparklines "
-              "or set --sync-offset manually.")
+    if a.offset_source == "auto" and abs(a.auto_correlation) < 0.3:
+        print("  ! low correlation — the auto-aligned offset is uncertain; verify the "
+              "sparklines or set --sync-offset manually.")
 
     width = 100
     dur = int(a.video_duration)
