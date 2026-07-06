@@ -257,3 +257,47 @@ def detect_highlights(video_path: str, gpx: GpxData, cfg: Config):
     scores = score_seconds(speeds_at_video, flow, cfg)
     segments = merge_segments(scores, cfg)
     return segments, scores
+
+
+def _pearson(a: np.ndarray, b: np.ndarray) -> float:
+    """Pearson correlation of two equal-length arrays; 0.0 if either is flat."""
+    if a.size < 2:
+        return 0.0
+    a_sd = a.std()
+    b_sd = b.std()
+    if a_sd < 1e-9 or b_sd < 1e-9:
+        return 0.0
+    return float(np.mean((a - a.mean()) * (b - b.mean())) / (a_sd * b_sd))
+
+
+def estimate_offset_by_motion(flow_per_sec, gpx: GpxData, cfg: Config):
+    """Find the offset (video_t -> activity index = t + offset) that best aligns
+    the video's per-second motion with GPS speed, via max Pearson correlation.
+
+    Returns (offset_seconds, correlation). offset is an integer lag as float.
+    """
+    flow = np.asarray(flow_per_sec, dtype=float)
+    speeds = np.asarray(gpx.speeds_kmh, dtype=float)
+    n_flow = flow.size
+    n_speed = speeds.size
+    if n_flow < 2 or n_speed < 2:
+        return 0.0, 0.0
+
+    # Candidate lags: video may start before the GPX (negative) or anywhere within it.
+    best_offset = 0.0
+    best_corr = 0.0
+    found = False
+    for lag in range(-n_flow + 1, n_speed):
+        # Overlap where both flow[t] and speeds[t + lag] are valid.
+        t_start = max(0, -lag)
+        t_end = min(n_flow, n_speed - lag)
+        if t_end - t_start < 2:
+            continue
+        fseg = flow[t_start:t_end]
+        sseg = speeds[t_start + lag:t_end + lag]
+        corr = _pearson(fseg, sseg)
+        if not found or corr > best_corr:
+            best_corr = corr
+            best_offset = float(lag)
+            found = True
+    return best_offset, best_corr

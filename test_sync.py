@@ -315,3 +315,36 @@ def test_garmin_not_configured_by_default(monkeypatch):
     monkeypatch.delenv("GARMIN_EMAIL", raising=False)
     monkeypatch.delenv("GARMIN_PASSWORD", raising=False)
     assert garmin_client.is_configured() is False
+
+
+from highlight_detector import estimate_offset_by_motion, GpxData
+
+
+def _gpx_with_speeds(speeds):
+    from datetime import datetime, timezone
+    return GpxData(
+        start_time=datetime(2026, 7, 6, 10, 0, 0, tzinfo=timezone.utc),
+        speeds_kmh=list(speeds),
+        coords=[(46.0, 7.0)] * len(speeds),
+        total_distance_km=0.0, elevation_gain_m=0.0, moving_time_s=0.0,
+        first_coord=(46.0, 7.0),
+    )
+
+
+def test_estimate_offset_recovers_known_lag():
+    # GPS speed pattern over the ride.
+    speeds = [0, 0, 0, 5, 20, 35, 40, 38, 10, 0, 0, 25, 30, 5, 0]
+    # The video covers activity seconds 4..10 -> its flow mirrors that window,
+    # so the correct offset (video_t -> activity index) is +4.
+    flow = [speeds[i + 4] * 0.1 for i in range(7)]   # correlated, scaled copy
+    cfg = Config()
+    offset, corr = estimate_offset_by_motion(flow, _gpx_with_speeds(speeds), cfg)
+    assert offset == 4.0
+    assert corr > 0.9
+
+
+def test_estimate_offset_flat_signal_does_not_crash():
+    cfg = Config()
+    offset, corr = estimate_offset_by_motion([0.0, 0.0, 0.0], _gpx_with_speeds([0.0] * 10), cfg)
+    assert isinstance(offset, float)
+    assert corr == 0.0

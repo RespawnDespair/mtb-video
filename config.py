@@ -15,6 +15,7 @@ class Config:
     flow_sample_fps: float = 2.0        # frames sampled per second for optical flow
     min_segment_seconds: float = 2.0    # discard segments shorter than this
     gap_bridge_seconds: float = 2.0     # merge kept segments separated by <= this
+    sparkline_columns: int = 100        # width of --inspect ASCII sparklines
 
     # Stage 2 — edit / audio
     original_audio_volume: float = 0.4  # multiplier on original video audio
