@@ -43,22 +43,30 @@ Deeper tuning lives in `config.py`.
 
 ## Optional: Strava stats
 
-1. Create an API app at https://www.strava.com/settings/api → note Client ID/Secret.
-2. Complete the OAuth2 flow once and save the tokens to `.strava_token.json`:
+1. Create an API app at https://www.strava.com/settings/api. Fill in:
+   - **Website:** anything (e.g. `http://localhost`)
+   - **Authorization Callback Domain:** `localhost` (just the domain — no
+     `http://`, no port, no path)
 
-   ```json
-   {"access_token": "...", "refresh_token": "...", "expires_at": 0}
-   ```
+   Note the **Client ID** and **Client Secret**.
 
-3. Export credentials and run with `--strava`:
+2. Export the credentials and run the one-time OAuth helper. It opens your
+   browser, catches the redirect on `localhost`, and writes
+   `.strava_token.json` for you:
 
    ```bash
    export STRAVA_CLIENT_ID=xxxxx
    export STRAVA_CLIENT_SECRET=xxxxx
+   python strava_auth.py            # or: python strava_auth.py --port 8721
+   ```
+
+3. Run the pipeline with `--strava`:
+
+   ```bash
    python main.py --video ride.mp4 --gpx ride.gpx --strava
    ```
 
-Tokens refresh automatically. `.strava_token.json` is gitignored.
+Tokens refresh automatically after that. `.strava_token.json` is gitignored.
 
 ## Optional: Garmin Connect stats
 
