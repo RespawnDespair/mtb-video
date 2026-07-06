@@ -85,7 +85,7 @@ def format_segment_stats(clip: SegmentClip) -> str:
     parts = []
     elapsed = int(s.get("elapsed_s") or 0)
     parts.append(f"{elapsed // 60}:{elapsed % 60:02d}")
-    if s.get("speed_kmh"):
+    if s.get("speed_kmh") is not None:
         parts.append(f"{s['speed_kmh']:.1f} km/u")
     if s.get("power_w") is not None:
         parts.append(f"{s['power_w']} W")

@@ -14,8 +14,12 @@ def _escape_drawtext(text: str) -> str:
     """Escape characters special to FFmpeg drawtext text values."""
     text = text.replace("\\", "\\\\")
     text = text.replace(":", "\\:")
-    text = text.replace("'", "\\'")
     text = text.replace("%", "\\%")
+    # Close the single-quoted string, emit an escaped quote, then reopen the
+    # quoted string. A backslash-escaped quote (\') is NOT valid inside a
+    # single-quoted ffmpeg filter argument, so this must be done last (after
+    # backslash escaping above) to avoid doubling the backslash it introduces.
+    text = text.replace("'", "'\\''")
     return text
 
 
@@ -23,6 +27,8 @@ def _lower_third_filter(name: str, stats: str, cfg: Config) -> str:
     """Build a filtergraph: a semi-transparent lower band + name and stats lines."""
     font = cfg.overlay_font_path
     band_h = cfg.overlay_name_fontsize + cfg.overlay_stats_fontsize + 60
+    # drawbox uses ih (input height); drawtext below uses h instead because
+    # drawtext's expression evaluator does not define ih (only h).
     box = (f"drawbox=x=0:y=ih-{band_h}:w=iw:h={band_h}:"
            f"color=black@{cfg.overlay_band_opacity}:t=fill")
     name_txt = (f"drawtext=fontfile='{font}':text='{_escape_drawtext(name)}':"
