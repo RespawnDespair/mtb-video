@@ -197,3 +197,21 @@ def test_merge_segments_drops_too_short():
     scores = [0.9, 0.1, 0.1, 0.1]
     segs = merge_segments(scores, cfg)
     assert segs == []
+
+
+from video_editor import _amix_filter
+
+
+def test_amix_filter_without_music_is_empty():
+    cfg = Config()
+    assert _amix_filter(cfg, has_music=False, reel_duration=60.0) == ""
+
+
+def test_amix_filter_with_music_includes_volumes_and_fade():
+    cfg = Config(original_audio_volume=0.4, music_volume=1.0, fade_out_seconds=3.0)
+    f = _amix_filter(cfg, has_music=True, reel_duration=60.0)
+    assert "volume=0.4" in f       # original audio attenuation
+    assert "volume=1.0" in f       # music volume
+    assert "amix" in f
+    assert "afade=t=out" in f      # music fade-out
+    assert "st=57" in f            # fade starts at duration - fade_out (60-3)
