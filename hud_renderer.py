@@ -55,6 +55,12 @@ def render_hud_frame(sample, segment_name, seg_coords, size, cfg, date_str):
         d.text((s(56), s(110)), hr_txt, font=hr_font, fill=_WHITE)
         d.text((s(56) + d.textlength(hr_txt, font=hr_font) + s(12), s(122)),
                "BPM", font=unit_font, fill=_GREY)
+    if sample.power_w is not None:
+        pf = _font(cfg, s(40)); puf = _font(cfg, s(22))
+        d.rounded_rectangle([s(40), s(168), s(300), s(226)], radius=s(10), fill=_DARK)
+        pw = f"{int(round(sample.power_w))}"
+        d.text((s(56), s(178)), pw, font=pf, fill=_WHITE)
+        d.text((s(56) + d.textlength(pw, font=pf) + s(12), s(190)), "W", font=puf, fill=_GREY)
 
     # ---- top-right: ELEVATION (left) then SLOPE (right) ----
     def stat(x, label, value):

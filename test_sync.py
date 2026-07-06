@@ -935,3 +935,31 @@ def test_sample_telemetry_still_works_on_bare_gpx():
     g = _gpx_n(3)
     s = sample_telemetry(g, activity_time_s=1.0, segment_start_s=0.0)
     assert s.power_w is None                         # GpxData has no watts
+
+
+def test_render_hud_frame_draws_power_when_present():
+    from telemetry import TelemetrySample
+    from config import Config
+    import hud_renderer
+    W, H = 1920, 1080
+    coords = [(51.8, 4.0), (51.801, 4.0)]
+    s = TelemetrySample(speed_kmh=18.0, elevation_m=-1.0, slope_pct=4.0, hr_bpm=150,
+                        lat=51.8, lon=4.0, seg_distance_km=0.3, power_w=218.0)
+    img = hud_renderer.render_hud_frame(s, "Seg", coords, (W, H), Config(), "05-07-2026")
+    # power panel sits just under the HR panel (top-left, ~y 168..226 at 1080p)
+    band = img.crop((40, 165, 300, 230)).getchannel("A")
+    assert band.getextrema()[1] > 0
+
+
+def test_render_hud_frame_no_power_panel_when_none():
+    from telemetry import TelemetrySample
+    from config import Config
+    import hud_renderer
+    W, H = 1920, 1080
+    s = TelemetrySample(speed_kmh=18.0, elevation_m=-1.0, slope_pct=4.0, hr_bpm=None,
+                        lat=51.8, lon=4.0, seg_distance_km=0.3, power_w=None)
+    img = hud_renderer.render_hud_frame(s, "Seg", [(51.8, 4.0), (51.801, 4.0)],
+                                        (W, H), Config(), "05-07-2026")
+    # with no HR and no power, the top-left area under the name has no panel pixels
+    band = img.crop((40, 165, 300, 230)).getchannel("A")
+    assert band.getextrema()[1] == 0
