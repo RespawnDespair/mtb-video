@@ -1761,3 +1761,32 @@ def test_run_multi_dropped_ranges_error(monkeypatch, capsys):
     rc = main._run_multi(args, Config(), object(), None, False)
     assert rc == 1
     assert "niets te renderen" in capsys.readouterr().err
+
+
+def test_run_multi_pick_numbers_covered_and_marks_skipped(monkeypatch, capsys):
+    """Multi-file segment dry-run: number only covered segments, mark --pick skips,
+    report no-video segments separately."""
+    import main, clip_sources
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from config import Config
+    # two sources covering ride 0..10 and 100..110
+    def _s(path, base):
+        return clip_sources.ClipSource(path=path, base_offset=base, duration=10.0, width=1920,
+                                       height=1080, creation_time=datetime(2026,7,5,tzinfo=timezone.utc),
+                                       offset_source="metadata")
+    monkeypatch.setattr("clip_sources.build_clip_sources", lambda *a, **k: [_s("A.mp4",0.0), _s("B.mp4",100.0)])
+    # 3 noteworthy segments: seg1 covered by A, seg2 NO video, seg3 covered by B
+    monkeypatch.setattr(main, "_segment_ranges_multi", lambda a, g, c: [
+        (2.0, 6.0, "Seg1", {}), (50.0, 54.0, "Geen video", {}), (102.0, 106.0, "Seg3", {})])
+    args = SimpleNamespace(video=["A.mp4","B.mp4"], mode="segments", dry_run=True,
+                           pick="1", strava_activity_id=None, output="o.mp4",
+                           output_height="1080", music=None, gpx=None)
+    rc = main._run_multi(args, Config(), object(), None, False)
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "geen video voor: Geen video" in out.err          # uncovered reported separately
+    assert "Segment-highlights (2)" in out.out               # only 2 covered segments numbered
+    assert "1. " in out.out and "Seg1" in out.out
+    assert "2. " in out.out and "Seg3" in out.out             # Seg3 is #2 (uncovered not numbered)
+    assert "(overgeslagen)" in out.out                        # Seg3 skipped by --pick 1
