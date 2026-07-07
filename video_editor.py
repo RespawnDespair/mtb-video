@@ -241,7 +241,7 @@ class _PartClip:
     stats: dict
 
 
-def _render_hud_pngs_for_part(part, source, gpx, target_size, workdir, cfg):
+def _render_hud_pngs_for_part(part, source, gpx, target_size, workdir, cfg, part_index=0):
     """HUD PNG sequence for a RenderPart, sized to target_size, telemetry at
     activity_t = local_t + part.base_offset. Returns the printf pattern path."""
     W, H = target_size
@@ -249,7 +249,7 @@ def _render_hud_pngs_for_part(part, source, gpx, target_size, workdir, cfg):
     seg_start_activity = part.local_start + part.base_offset
     seg_coords = _segment_coords(gpx, clip, part.base_offset)
     date_str = gpx.start_time.strftime("%d-%m-%Y")
-    hud_dir = os.path.join(workdir, os.path.basename(workdir) + "_hud")
+    hud_dir = os.path.join(workdir, f"hud_{part_index:03d}")
     os.makedirs(hud_dir, exist_ok=True)
     dur = clip.end - clip.start
     n_frames = max(1, int(round(dur * cfg.hud_fps)))
@@ -280,7 +280,7 @@ def build_reel_from_parts(parts, cfg: Config, target_size, gpx=None,
         if part.name is not None and use_hud:
             _log(f"[{i+1}/{n}] {part.name} ({dur:.1f}s) — HUD…")
             try:
-                pattern = _render_hud_pngs_for_part(part, source, gpx, (W, H), workdir, cfg)
+                pattern = _render_hud_pngs_for_part(part, source, gpx, (W, H), workdir, cfg, part_index=i)
                 cmd = ["ffmpeg", "-y", "-ss", str(part.local_start), "-t", str(dur),
                        "-i", part.source_path, "-framerate", str(cfg.hud_fps), "-i", pattern,
                        "-filter_complex", f"[0:v]{scale}[v0];[v0][1:v]overlay=0:0:shortest=1[v]",

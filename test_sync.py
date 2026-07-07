@@ -1665,3 +1665,52 @@ def test_build_reel_from_parts_two_sources(tmp_path):
     codecs = subprocess.run(["ffprobe","-v","error","-show_entries","stream=codec_type",
                              "-of","csv=p=0",reel], capture_output=True, text=True).stdout.split()
     assert "video" in codecs and "audio" in codecs
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_reel_from_parts_hud_two_named_parts(tmp_path):
+    """Two named HUD parts sharing one workdir; part0 (4s) is longer than part1 (2s).
+    If _render_hud_pngs_for_part didn't use a per-part unique hud dir, part1's shorter
+    frame sequence would leave stale high-index frames from part0 lingering in the
+    (shared) directory."""
+    import os, subprocess, video_editor, clip_sources
+    from datetime import datetime, timezone
+    from config import Config
+    from highlight_detector import GpxData
+
+    src = tmp_path / "src.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:d=8",
+                    "-f", "lavfi", "-i", "sine=d=8", "-c:v", "libx264", "-pix_fmt",
+                    "yuv420p", "-c:a", "aac", "-shortest", str(src)],
+                   check=True, capture_output=True)
+
+    n = 9  # covers activity seconds 0..8
+    gpx = GpxData(
+        start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+        speeds_kmh=[10.0 + i for i in range(n)],
+        coords=[(52.0 + i * 0.0001, 4.0 + i * 0.0001) for i in range(n)],
+        elevations_m=[100.0 + i for i in range(n)],
+        hr_bpm=[120 + i for i in range(n)],
+        cum_distance_m=[i * 3.0 for i in range(n)],
+        total_distance_km=1.0, elevation_gain_m=10.0, moving_time_s=8.0,
+        first_coord=(52.0, 4.0), name="Rit",
+    )
+
+    parts = [
+        clip_sources.RenderPart(source_path=str(src), local_start=0.0, local_end=4.0,
+                                base_offset=0.0, name="deel1"),
+        clip_sources.RenderPart(source_path=str(src), local_start=4.0, local_end=6.0,
+                                base_offset=0.0, name="deel2"),
+    ]
+    cfg = Config(); cfg.hud_enabled = True; cfg.hud_fps = 6
+
+    reel = video_editor.build_reel_from_parts(parts, cfg, target_size=(640, 480), gpx=gpx)
+
+    assert os.path.exists(reel)
+    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "csv=p=0", reel], capture_output=True, text=True).stdout)
+    assert abs(d - 6.0) < 0.5
+    codecs = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
+                             "-of", "csv=p=0", reel], capture_output=True, text=True).stdout.split()
+    assert "video" in codecs and "audio" in codecs
