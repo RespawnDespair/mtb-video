@@ -1639,3 +1639,29 @@ def test_efforts_to_activity_ranges():
     a0, a1, name, stats = ranges[0]
     assert abs(a0 - 300.0) < 1e-6 and abs(a1 - 340.0) < 1e-6
     assert name == "Afdaling" and stats["elapsed_s"] == 40.0
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_reel_from_parts_two_sources(tmp_path):
+    import subprocess, video_editor, clip_sources
+    from config import Config
+    a = tmp_path / "A.mp4"; b = tmp_path / "B.mp4"
+    subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc=s=320x240:d=5",
+                    "-f","lavfi","-i","sine=d=5","-c:v","libx264","-pix_fmt","yuv420p",
+                    "-c:a","aac","-shortest",str(a)], check=True, capture_output=True)
+    subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc2=s=640x480:d=5",
+                    "-f","lavfi","-i","sine=frequency=300:d=5","-c:v","libx264",
+                    "-pix_fmt","yuv420p","-c:a","aac","-shortest",str(b)], check=True, capture_output=True)
+    parts = [
+        clip_sources.RenderPart(source_path=str(a), local_start=1.0, local_end=3.0, base_offset=0.0),
+        clip_sources.RenderPart(source_path=str(b), local_start=0.0, local_end=2.0, base_offset=100.0),
+    ]
+    cfg = Config(); cfg.hud_enabled = False
+    reel = video_editor.build_reel_from_parts(parts, cfg, target_size=(640, 480))
+    d = float(subprocess.run(["ffprobe","-v","error","-show_entries","format=duration",
+                              "-of","csv=p=0",reel], capture_output=True, text=True).stdout)
+    assert abs(d - 4.0) < 0.4       # 2s + 2s
+    codecs = subprocess.run(["ffprobe","-v","error","-show_entries","stream=codec_type",
+                             "-of","csv=p=0",reel], capture_output=True, text=True).stdout.split()
+    assert "video" in codecs and "audio" in codecs

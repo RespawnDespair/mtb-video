@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 
 from config import Config
 from highlight_detector import Segment
@@ -228,3 +229,77 @@ def build_segment_reel(video_path, clips, music_path, cfg: Config,
         part_paths.append(part)
     reel_duration = sum(c.end - c.start for c in clips)
     return _concat_and_music(part_paths, music_path, reel_duration, workdir, cfg)
+
+
+@dataclass
+class _PartClip:
+    """Shim so a RenderPart can be handed to _segment_coords/format_segment_stats,
+    which expect a clip-like object with .start/.end/.name/.stats."""
+    start: float
+    end: float
+    name: "str | None"
+    stats: dict
+
+
+def _render_hud_pngs_for_part(part, source, gpx, target_size, workdir, cfg):
+    """HUD PNG sequence for a RenderPart, sized to target_size, telemetry at
+    activity_t = local_t + part.base_offset. Returns the printf pattern path."""
+    W, H = target_size
+    clip = _PartClip(part.local_start, part.local_end, part.name, part.stats or {})
+    seg_start_activity = part.local_start + part.base_offset
+    seg_coords = _segment_coords(gpx, clip, part.base_offset)
+    date_str = gpx.start_time.strftime("%d-%m-%Y")
+    hud_dir = os.path.join(workdir, os.path.basename(workdir) + "_hud")
+    os.makedirs(hud_dir, exist_ok=True)
+    dur = clip.end - clip.start
+    n_frames = max(1, int(round(dur * cfg.hud_fps)))
+    for i in range(n_frames):
+        activity_t = clip.start + (i / cfg.hud_fps) + part.base_offset
+        sample = sample_telemetry(source, activity_t, seg_start_activity)
+        frame = hud_renderer.render_hud_frame(sample, clip.name, seg_coords, (W, H), cfg, date_str)
+        frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
+    return os.path.join(hud_dir, "hud_%06d.png")
+
+
+def build_reel_from_parts(parts, cfg: Config, target_size, gpx=None,
+                          telemetry_source=None) -> str:
+    """Cut each RenderPart from its own source, scale to target_size so parts from
+    different files concatenate, overlay HUD/lower-third when the part is named, and
+    concat in order. Music is applied later (final stage), so none here."""
+    check_ffmpeg()
+    W, H = target_size
+    workdir = tempfile.mkdtemp(prefix="rhe_parts_")
+    scale = f"scale={W}:{H},setsar=1"
+    source = telemetry_source if telemetry_source is not None else gpx
+    use_hud = cfg.hud_enabled and gpx is not None
+    part_paths = []
+    n = len(parts)
+    for i, part in enumerate(parts):
+        out = os.path.join(workdir, f"part_{i:03d}.mp4")
+        dur = part.local_end - part.local_start
+        if part.name is not None and use_hud:
+            _log(f"[{i+1}/{n}] {part.name} ({dur:.1f}s) — HUD…")
+            try:
+                pattern = _render_hud_pngs_for_part(part, source, gpx, (W, H), workdir, cfg)
+                cmd = ["ffmpeg", "-y", "-ss", str(part.local_start), "-t", str(dur),
+                       "-i", part.source_path, "-framerate", str(cfg.hud_fps), "-i", pattern,
+                       "-filter_complex", f"[0:v]{scale}[v0];[v0][1:v]overlay=0:0:shortest=1[v]",
+                       "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
+                       "-c:a", "aac", out]
+                _run_ffmpeg_progress(cmd, dur, f"[{i+1}/{n}] {part.name} — overlay")
+                part_paths.append(out)
+                continue
+            except Exception as e:
+                print(f"[warn] HUD render failed ({e}); falling back to lower-third.")
+        if part.name is not None:
+            vf = f"{scale}," + _lower_third_filter(part.name, format_segment_stats(
+                _PartClip(part.local_start, part.local_end, part.name, part.stats or {})), cfg)
+        else:
+            vf = scale
+        subprocess.run(["ffmpeg", "-y", "-ss", str(part.local_start), "-i", part.source_path,
+                        "-t", str(dur), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
+                        "-c:a", "aac", out], check=True, capture_output=True)
+        part_paths.append(out)
+
+    reel_duration = sum(p.local_end - p.local_start for p in parts)
+    return _concat_and_music(part_paths, None, reel_duration, workdir, cfg)
