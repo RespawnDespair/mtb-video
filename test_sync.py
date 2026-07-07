@@ -1618,3 +1618,24 @@ def test_build_clip_sources_shared_correction_and_sort(monkeypatch):
     assert [s.path for s in srcs] == ["A.mp4", "B.mp4"]        # sorted by base_offset
     assert srcs[0].base_offset == 300.0 + 577.0                # correction added per file
     assert srcs[1].base_offset == 1000.0 + 577.0
+
+
+def test_efforts_to_activity_ranges():
+    from datetime import datetime, timezone
+    from segment_detector import SegmentEffort, efforts_to_activity_ranges
+
+    class C: min_segment_seconds = 3.0
+    start = datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc)
+    efforts = [
+        SegmentEffort(name="Afdaling", start_date=datetime(2026,7,5,12,5,0,tzinfo=timezone.utc),
+                      elapsed_time=40.0, distance_m=200.0, starred=True),
+        SegmentEffort(name="Kort", start_date=datetime(2026,7,5,12,10,0,tzinfo=timezone.utc),
+                      elapsed_time=1.0, distance_m=5.0, starred=True),        # < min -> dropped
+        SegmentEffort(name="Saai", start_date=datetime(2026,7,5,12,20,0,tzinfo=timezone.utc),
+                      elapsed_time=30.0, distance_m=100.0),                    # not noteworthy
+    ]
+    ranges = efforts_to_activity_ranges(efforts, start, C())
+    assert len(ranges) == 1
+    a0, a1, name, stats = ranges[0]
+    assert abs(a0 - 300.0) < 1e-6 and abs(a1 - 340.0) < 1e-6
+    assert name == "Afdaling" and stats["elapsed_s"] == 40.0

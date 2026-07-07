@@ -79,6 +79,28 @@ def efforts_to_clips(efforts, gpx_start: datetime, offset_seconds: float,
     return clips
 
 
+def efforts_to_activity_ranges(efforts, gpx_start: datetime, cfg) -> list:
+    """Noteworthy efforts as ride-time ranges (activity_start, activity_end, name, stats).
+    No offset/duration clamping here — coverage clamping happens in resolve_render_parts."""
+    ranges = []
+    for e in efforts:
+        if not is_noteworthy(e):
+            continue
+        if e.elapsed_time < cfg.min_segment_seconds:
+            continue
+        a0 = (e.start_date - gpx_start).total_seconds()
+        speed_kmh = (e.distance_m / e.elapsed_time * 3.6) if e.elapsed_time > 0 else 0.0
+        stats = {
+            "elapsed_s": e.elapsed_time,
+            "speed_kmh": speed_kmh,
+            "power_w": round(e.average_watts) if e.average_watts is not None else None,
+            "hr_bpm": round(e.average_heartrate) if e.average_heartrate is not None else None,
+        }
+        ranges.append((a0, a0 + e.elapsed_time, e.name, stats))
+    ranges.sort(key=lambda r: r[0])
+    return ranges
+
+
 def format_segment_stats(clip: SegmentClip) -> str:
     """A stats line like '4:10 · 16.3 km/u · 175 W · 153 bpm' (missing fields omitted)."""
     s = clip.stats
