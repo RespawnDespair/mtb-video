@@ -97,7 +97,7 @@ def render_hud_frame(sample, segment_name, seg_coords, size, cfg, date_str):
     d.text((cx - s(28), cy + s(28)), "KM/U", font=tickf, fill=_GREY)
 
     # ---- bottom-left: minimap + distance + date ----
-    mw, mh, pad = s(240), s(200), s(24)
+    mw, mh, pad = s(360), s(300), s(36)   # ~150% of the original 240x200
     mx, my = s(40), H - s(40) - mh
     d.rounded_rectangle([mx, my, mx + mw, my + mh], radius=s(10), fill=_DARK)
     if seg_coords and len(seg_coords) >= 2:
