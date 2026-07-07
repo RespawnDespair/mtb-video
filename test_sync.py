@@ -1185,3 +1185,44 @@ def test_curviest_window_respects_offset():
 
 def test_curviest_window_no_fit_returns_zero():
     assert curviest_window([0.0] * 5, offset_seconds=0.0, video_duration=2.0, clip_len=7.0) == 0.0
+
+
+import intro_renderer
+from datetime import datetime, timezone
+
+
+def _named_gpx(name):
+    from highlight_detector import GpxData
+    return GpxData(start_time=datetime(2026, 7, 5, 14, 32, 0, tzinfo=timezone.utc),
+                   speeds_kmh=[20] * 3, coords=[(51.8, 4.0), (51.801, 4.0), (51.802, 4.001)],
+                   elevations_m=[5, 6, 7], hr_bpm=[100, 100, 100], cum_distance_m=[0, 10, 20],
+                   total_distance_km=15.6, elevation_gain_m=166.0, moving_time_s=2933.0,
+                   first_coord=(51.8, 4.0), name=name)
+
+
+def test_intro_title_prefers_gpx_name():
+    assert intro_renderer.intro_title(_named_gpx("Namiddagrit"), "x.gpx") == "Namiddagrit"
+    assert intro_renderer.intro_title(_named_gpx(None), "Mooie_Rit.gpx") == "Mooie Rit"
+
+
+def test_intro_stats_power_only_when_present():
+    g = _named_gpx("R")
+    base = intro_renderer.intro_stats(g, None)
+    labels = [l for l, _ in base]
+    assert "AFSTAND" in labels and "GEM. SNELHEID" in labels and "VERMOGEN" not in labels
+    with_p = intro_renderer.intro_stats(g, {"avg_power": 218})
+    assert ("VERMOGEN", "218 W") in with_p
+
+
+def test_render_intro_frame_regions():
+    from config import Config
+    g = _named_gpx("Namiddagrit")
+    stats = intro_renderer.intro_stats(g, None)
+    img = intro_renderer.render_intro_frame(1.0, g.coords, "NAMIDDAGRIT",
+                                            intro_renderer.intro_date(g), stats,
+                                            (1920, 1080), Config())
+    assert img.size == (1920, 1080) and img.mode == "RGBA"
+    A = img.getchannel("A")
+    assert A.getpixel((5, 5)) > 0                                   # full-frame scrim
+    assert img.crop((60, 90, 700, 240)).getchannel("A").getextrema()[1] > 0   # title
+    assert img.crop((0, 900, 1920, 1080)).getchannel("A").getextrema()[1] > 0 # stat row
