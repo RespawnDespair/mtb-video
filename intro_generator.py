@@ -145,9 +145,42 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
     return output
 
 
+def _apply_music(combined_path: str, output: str, args, cfg: Config) -> str:
+    """Build the adaptive music bed at the video's length and mix it under the audio.
+    On any failure, fall back to the un-scored video."""
+    from highlight_detector import get_video_duration
+    from video_editor import _run_ffmpeg_progress
+    try:
+        import music_bed
+        ls, le = args.music_loop_start, args.music_loop_end
+        if ls is None or le is None:
+            from music_loop import detect_loop
+            ls, le = detect_loop(args.music, cfg.music_min_loop_seconds)
+        total = get_video_duration(combined_path)
+        workdir = tempfile.mkdtemp(prefix="rhe_music_")
+        try:
+            bed = music_bed.build_music_bed(args.music, total, ls, le,
+                                            os.path.join(workdir, "bed.m4a"), cfg)
+            cmd = ["ffmpeg", "-y", "-i", combined_path, "-i", bed,
+                   "-filter_complex",
+                   f"[0:a]volume={cfg.original_audio_volume}[a0];"
+                   f"[1:a]volume={cfg.music_volume}[a1];"
+                   f"[a0][a1]amix=inputs=2:duration=first[aout]",
+                   "-map", "0:v", "-map", "[aout]",
+                   "-c:v", "copy", "-c:a", "aac", output]
+            _run_ffmpeg_progress(cmd, total, "Muziek mixen")
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+    except Exception as e:
+        print(f"[warn] muziek toevoegen mislukt ({e}); zonder muziek.")
+        shutil.copy(combined_path, output)
+    return output
+
+
 def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args,
                       offset_seconds: float = 0.0) -> str:
-    """Prepend the intro to the reel and re-encode at the configured resolution."""
+    """Prepend the intro to the reel, re-encode at the configured resolution, and
+    (if --music was given) mix an adaptive music bed under the whole video."""
     from highlight_detector import get_video_resolution
     sw, sh = get_video_resolution(args.video)
     W, H = _target_dims(sw, sh, cfg.output_height)
@@ -158,6 +191,11 @@ def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, ar
         build_intro_clip(gpx, cfg, intro, extra, size=(W, H),
                          video_path=args.video, offset_seconds=offset_seconds,
                          gpx_path=getattr(args, "gpx", None))
-        return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output, W, H)
+        music = getattr(args, "music", None)
+        target = os.path.join(workdir, "combined.mp4") if music else output
+        _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, target, W, H)
+        if music:
+            _apply_music(target, output, args, cfg)
+        return output
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

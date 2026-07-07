@@ -38,6 +38,11 @@ python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --output highli
 python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
 ```
 
+Pass `--music track.mp3` and the tool builds an adaptive bed the exact length of the
+final video: it plays the track from the start, loops a seamless region (auto-detected,
+or set `--music-loop-start`/`--music-loop-end`) to fill the middle, then ends with the
+track's natural outro, mixed under the whole video (intro included).
+
 Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
 Deeper tuning lives in `config.py`.
 

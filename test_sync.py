@@ -1497,3 +1497,35 @@ def test_build_music_bed_short_linear(tmp_path):
     d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                               "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
     assert abs(d - 8.0) < 0.3
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
+    import subprocess, intro_generator
+    from datetime import datetime, timezone
+    from config import Config
+    from highlight_detector import GpxData
+    reel = tmp_path / "reel.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:d=3",
+                    "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-pix_fmt",
+                    "yuv420p", "-c:a", "aac", "-shortest", str(reel)],
+                   check=True, capture_output=True)
+    music_path = tmp_path / "m.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
+                    str(music_path)], check=True, capture_output=True)
+    monkeypatch.setattr(intro_generator, "reverse_geocode", lambda lat, lon: "T, NL")
+    g = GpxData(start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+                speeds_kmh=[10], coords=[(52.0, 4.0)], elevations_m=[5.0], hr_bpm=[100],
+                cum_distance_m=[0.0], total_distance_km=5.0, elevation_gain_m=20.0,
+                moving_time_s=600.0, first_coord=(52.0, 4.0), name="Rit")
+    cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 8
+    class A:
+        video = str(reel); strava = False; garmin = False; music = str(music_path)
+        music_loop_start = 10.0; music_loop_end = 25.0
+    out = tmp_path / "final.mp4"
+    intro_generator.build_final_video(str(reel), g, cfg, str(out), A())
+    codec = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",
+                            "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(out)],
+                           capture_output=True, text=True).stdout.strip()
+    assert out.exists() and codec == "audio"

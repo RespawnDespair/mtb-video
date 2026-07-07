@@ -117,6 +117,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pick", default=None,
                    help="Comma-separated 1-based segment numbers to render (from the "
                         "--dry-run list), e.g. --pick 1,3. Default: all segments.")
+    p.add_argument("--music-loop-start", type=float, default=None,
+                   help="Manual music loop-in point (s); overrides auto-detection "
+                        "(use with --music-loop-end).")
+    p.add_argument("--music-loop-end", type=float, default=None,
+                   help="Manual music loop-out point (s); overrides auto-detection.")
     return p
 
 
@@ -285,7 +290,7 @@ def main() -> int:
         except Exception as e:
             print(f"[warn] Strava streams unavailable ({e}); using GPX telemetry.",
                   file=sys.stderr)
-        reel = build_segment_reel(args.video, clips, args.music, cfg,
+        reel = build_segment_reel(args.video, clips, None, cfg,
                                   gpx=gpx, offset_seconds=r.offset_used,
                                   telemetry_source=telemetry_source)
         try:
@@ -309,7 +314,7 @@ def main() -> int:
         return 1
     from video_editor import build_highlight_reel
     from intro_generator import build_final_video
-    reel = build_highlight_reel(args.video, segments, args.music, cfg)
+    reel = build_highlight_reel(args.video, segments, None, cfg)
     try:
         print("Intro + eindmontage renderen…", file=sys.stderr)
         build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)

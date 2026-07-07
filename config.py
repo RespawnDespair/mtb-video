@@ -41,3 +41,8 @@ class Config:
 
     # Output resolution
     output_height: int = 1080   # final video height; width follows source aspect
+
+    # Adaptive music bed
+    music_min_loop_seconds: float = 8.0
+    music_outro_seconds: float = 10.0
+    music_crossfade_seconds: float = 1.5
