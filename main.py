@@ -89,7 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Generate an MTB highlight video from action-cam footage + GPX telemetry."
     )
-    p.add_argument("--video", required=True, help="Path to the source video file.")
+    p.add_argument("--video", required=True, nargs="+",
+                   help="One or more source video files that jointly cover the ride.")
     p.add_argument("--gpx", help="Path to the Strava/Garmin GPX export. If omitted, "
                                  "the track is built from --strava-activity-id.")
     p.add_argument("--music", help="Path to a royalty-free MP3/AAC music track.")
@@ -209,7 +210,7 @@ def select_segment_clips(args, gpx, cfg, offset_seconds):
             return None
         raw = strava_client.get_segment_efforts(args.strava_activity_id)
         efforts = parse_efforts(raw)
-        duration = get_video_duration(args.video)
+        duration = get_video_duration(args.video[0])
         clips = efforts_to_clips(efforts, gpx.start_time, offset_seconds, duration, cfg)
         return clips or None
     except Exception as e:
@@ -217,31 +218,126 @@ def select_segment_clips(args, gpx, cfg, offset_seconds):
         return None
 
 
+def _segment_ranges_multi(args, gpx, cfg):
+    """Strava efforts as ride-time ranges for the multi-file path, or None."""
+    try:
+        import strava_client
+        from segment_detector import parse_efforts, efforts_to_activity_ranges
+        if not strava_client.is_configured() or not args.strava_activity_id:
+            return None
+        efforts = parse_efforts(strava_client.get_segment_efforts(args.strava_activity_id))
+        return efforts_to_activity_ranges(efforts, gpx.start_time, cfg) or None
+    except Exception as e:
+        print(f"[warn] Strava segments unavailable: {e}", file=sys.stderr)
+        return None
+
+
+def _telemetry_source_multi(args, gpx):
+    try:
+        import strava_client
+        from telemetry import telemetry_from_streams
+        if strava_client.is_configured() and args.strava_activity_id:
+            streams = strava_client.get_activity_streams(args.strava_activity_id)
+            if streams:
+                print("Telemetrie: Strava-streams", file=sys.stderr)
+                return telemetry_from_streams(streams, gpx)
+    except Exception as e:
+        print(f"[warn] Strava streams unavailable ({e}); using GPX telemetry.", file=sys.stderr)
+    return None
+
+
+def _run_multi(args, cfg, gpx, offset_override, use_auto) -> int:
+    """Multi-file orchestration: build clip sources, resolve ride-time ranges onto
+    coverage, build the reel from RenderParts, then run intro + final assembly."""
+    from clip_sources import build_clip_sources, resolve_render_parts, RenderPart
+    from video_editor import build_reel_from_parts
+    from intro_generator import build_final_video, _target_dims
+
+    sources = build_clip_sources(args.video, gpx, cfg, offset_override=offset_override,
+                                 use_auto=use_auto)
+    W, H = _target_dims(sources[0].width, sources[0].height, cfg.output_height)
+
+    ranges = None
+    if args.mode in ("auto", "segments"):
+        ranges = _segment_ranges_multi(args, gpx, cfg)
+        if args.mode == "segments" and not ranges:
+            print("Segment mode requested but no Strava segments available "
+                  "(need --strava-activity-id, configured Strava, and segments in "
+                  "the video window).", file=sys.stderr)
+            return 1
+
+    if ranges:  # segment mode
+        parts, dropped = resolve_render_parts(sources, ranges)
+        if dropped:
+            print(f"[warn] geen video voor: {', '.join(dropped)}", file=sys.stderr)
+        if not parts:
+            print("Geen van de segmenten wordt door video gedekt; niets te renderen.",
+                  file=sys.stderr)
+            return 1
+        if args.dry_run:
+            print(f"Render-delen ({len(parts)}):")
+            for p in parts:
+                print(f"  {_mmss(p.base_offset + p.local_start)}  {p.name}  "
+                      f"[{os.path.basename(p.source_path)} {p.local_start:.1f}-{p.local_end:.1f}s]")
+            return 0
+        telemetry_source = _telemetry_source_multi(args, gpx)
+        reel = build_reel_from_parts(parts, cfg, (W, H), gpx=gpx,
+                                     telemetry_source=telemetry_source)
+    else:
+        # flow mode across files: analyse each source, keep its video-local segments
+        from highlight_detector import analyze_video as _analyze_video
+        parts = []
+        for s in sources:
+            a = _analyze_video(s.path, gpx, cfg, offset_override=None, use_auto=use_auto)
+            for seg in a.segments:
+                parts.append(RenderPart(source_path=s.path, local_start=seg.start,
+                                        local_end=seg.end, base_offset=s.base_offset))
+        parts.sort(key=lambda p: p.base_offset + p.local_start)
+        if args.dry_run:
+            print(f"Flow-highlights over {len(sources)} bestanden: {len(parts)} deel(en).")
+            return 0
+        if not parts:
+            print("No highlight segments detected; nothing to render.", file=sys.stderr)
+            return 1
+        reel = build_reel_from_parts(parts, cfg, (W, H), gpx=None)
+
+    try:
+        print("Intro + eindmontage renderen…", file=sys.stderr)
+        build_final_video(reel, gpx, cfg, args.output, args, sources=sources)
+    finally:
+        shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
+    print(f"Wrote {args.output}")
+    return 0
+
+
 def main() -> int:
     args = build_parser().parse_args()
     check_ffmpeg()
     cfg = build_config_from_args(args)
-    cfg.output_height = resolve_output_height(args.output_height, args.video)
+    cfg.output_height = resolve_output_height(args.output_height, args.video[0])
 
     gpx = resolve_gpx_source(args)
     offset_override, use_auto = resolve_offset_args(args)
 
+    if len(args.video) > 1:
+        return _run_multi(args, cfg, gpx, offset_override, use_auto)
+
     from highlight_detector import resolve_sync_offset
 
     if args.inspect:
-        analysis = analyze_video(args.video, gpx, cfg,
+        analysis = analyze_video(args.video[0], gpx, cfg,
                                  offset_override=offset_override, use_auto=use_auto)
         if analysis.offset_source == "mtime":
-            print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
+            print(f"[warn] {args.video[0]} has no creation_time metadata; using file mtime "
                   "for sync — alignment may be approximate.", file=sys.stderr)
         print_inspection(analysis, gpx)
         return 0
 
     # Resolve the offset flow-free unless --auto-sync (avoids optical flow on big clips).
-    r = resolve_sync_offset(args.video, gpx, cfg,
+    r = resolve_sync_offset(args.video[0], gpx, cfg,
                             offset_override=offset_override, use_auto=use_auto)
     if r.offset_source == "mtime":
-        print(f"[warn] {args.video} has no creation_time metadata; using file mtime "
+        print(f"[warn] {args.video[0]} has no creation_time metadata; using file mtime "
               "for sync — alignment may be approximate.", file=sys.stderr)
 
     clips = None
@@ -290,7 +386,7 @@ def main() -> int:
         except Exception as e:
             print(f"[warn] Strava streams unavailable ({e}); using GPX telemetry.",
                   file=sys.stderr)
-        reel = build_segment_reel(args.video, clips, None, cfg,
+        reel = build_segment_reel(args.video[0], clips, None, cfg,
                                   gpx=gpx, offset_seconds=r.offset_used,
                                   telemetry_source=telemetry_source)
         try:
@@ -303,7 +399,7 @@ def main() -> int:
         return 0
 
     # flow mode (fallback / --mode flow)
-    analysis = analyze_video(args.video, gpx, cfg,
+    analysis = analyze_video(args.video[0], gpx, cfg,
                              offset_override=offset_override, use_auto=use_auto)
     segments, scores = analysis.segments, analysis.scores
     if args.dry_run:
@@ -314,7 +410,7 @@ def main() -> int:
         return 1
     from video_editor import build_highlight_reel
     from intro_generator import build_final_video
-    reel = build_highlight_reel(args.video, segments, None, cfg)
+    reel = build_highlight_reel(args.video[0], segments, None, cfg)
     try:
         print("Intro + eindmontage renderen…", file=sys.stderr)
         build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)

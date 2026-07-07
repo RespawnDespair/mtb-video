@@ -1727,3 +1727,37 @@ def test_curviest_window_across_picks_best_source():
     path, local = intro_select.curviest_window_across([a, b], turn, clip_len=4.0)
     assert path == "B.mp4"
     assert 0.0 <= local <= 6.0
+
+
+def test_video_arg_is_list_single(monkeypatch):
+    import main
+    args = main.build_parser().parse_args(["--video", "a.mp4", "--gpx", "r.gpx"])
+    assert args.video == ["a.mp4"]
+
+
+def test_video_arg_is_list_multi():
+    import main
+    args = main.build_parser().parse_args(
+        ["--video", "a.mp4", "b.mp4", "c.mp4", "--gpx", "r.gpx"])
+    assert args.video == ["a.mp4", "b.mp4", "c.mp4"] and len(args.video) > 1
+
+
+def test_run_multi_dropped_ranges_error(monkeypatch, capsys):
+    """No coverage for any range -> non-zero exit with a clear message."""
+    import main, clip_sources
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    src = clip_sources.ClipSource(path="A.mp4", base_offset=0.0, duration=10.0, width=1920,
+                                  height=1080, creation_time=datetime(2026,7,5,tzinfo=timezone.utc),
+                                  offset_source="metadata")
+    monkeypatch.setattr(main, "_run_multi", main._run_multi)  # ensure real fn
+    monkeypatch.setattr("clip_sources.build_clip_sources", lambda *a, **k: [src])
+    monkeypatch.setattr(main, "_segment_ranges_multi", lambda a, g, c: [(100.0, 120.0, "ver", {})])
+    from intro_generator import _target_dims  # noqa: ensure importable
+    args = SimpleNamespace(video=["A.mp4", "B.mp4"], mode="segments", dry_run=False,
+                           strava_activity_id=None, output="out.mp4", output_height="1080",
+                           music=None, gpx="r.gpx")
+    from config import Config
+    rc = main._run_multi(args, Config(), object(), None, False)
+    assert rc == 1
+    assert "niets te renderen" in capsys.readouterr().err
