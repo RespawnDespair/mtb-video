@@ -50,7 +50,10 @@ def resolve_gpx_source(args):
     if getattr(args, "strava_activity_id", None) and strava_client.is_configured():
         import strava_gpx
         print(f"GPX: opgebouwd uit Strava-activity {args.strava_activity_id}", file=sys.stderr)
-        return strava_gpx.gpx_from_strava(args.strava_activity_id)
+        try:
+            return strava_gpx.gpx_from_strava(args.strava_activity_id)
+        except Exception as e:
+            raise SystemExit(f"Kon de Strava-track niet ophalen: {e}")
     raise SystemExit("Geef --gpx of --strava-activity-id (met Strava geconfigureerd).")
 
 

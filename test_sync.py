@@ -1395,3 +1395,36 @@ def test_resolve_gpx_source_neither_errors(monkeypatch):
         gpx = None; strava_activity_id = None
     with pytest.raises(SystemExit):
         main.resolve_gpx_source(A())
+
+
+def test_gpx_from_strava_gappy_time_stream(monkeypatch):
+    import strava_gpx, strava_client
+    monkeypatch.setattr(strava_client, "get_activity", lambda aid: _fake_activity())
+    # sparse time (0,2,4) with 3 latlng -> n = max(time)+1 = 5 per-second samples
+    s = {"time": {"data": [0, 2, 4]},
+         "latlng": {"data": [[51.80, 4.0], [51.81, 4.0], [51.82, 4.0]]},
+         "distance": {"data": [0.0, 50.0, 100.0]}}
+    monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: s)
+    g = strava_gpx.gpx_from_strava("42")
+    assert len(g.coords) == 5 and len(g.speeds_kmh) == 5 and len(g.elevations_m) == 5
+
+
+def test_gpx_from_strava_missing_start_date_raises(monkeypatch):
+    import strava_gpx, strava_client, pytest
+    act = _fake_activity(); del act["start_date"]
+    monkeypatch.setattr(strava_client, "get_activity", lambda aid: act)
+    monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: _fake_streams(3))
+    with pytest.raises(RuntimeError, match="start_date"):
+        strava_gpx.gpx_from_strava("42")
+
+
+def test_resolve_gpx_source_strava_error_clean_exit(monkeypatch):
+    import main, strava_client, strava_gpx, pytest
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    def boom(aid):
+        raise RuntimeError("no GPS track")
+    monkeypatch.setattr(strava_gpx, "gpx_from_strava", boom)
+    class A:
+        gpx = None; strava_activity_id = "42"
+    with pytest.raises(SystemExit):
+        main.resolve_gpx_source(A())

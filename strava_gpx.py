@@ -27,7 +27,7 @@ def gpx_from_strava(activity_id: str) -> GpxData:
             f"Strava activity {activity_id} has no GPS track (latlng stream missing).")
 
     times = data("time") or list(range(len(latlng)))
-    n = int(max(times)) + 1 if times else len(latlng)
+    n = int(max(times)) + 1
 
     lats = _resample(times, [p[0] for p in latlng], n)
     lons = _resample(times, [p[1] for p in latlng], n)
@@ -48,8 +48,12 @@ def gpx_from_strava(activity_id: str) -> GpxData:
     else:
         speeds = _speed_from_distance(cum_distance, n)
 
+    start = activity.get("start_date")
+    if not start:
+        raise RuntimeError(f"Strava activity {activity_id} has no start_date.")
+
     return GpxData(
-        start_time=_parse_dt(activity["start_date"]),
+        start_time=_parse_dt(start),
         speeds_kmh=speeds, coords=coords, elevations_m=elevations, hr_bpm=hr_bpm,
         cum_distance_m=cum_distance,
         total_distance_km=(activity.get("distance") or 0.0) / 1000.0,
