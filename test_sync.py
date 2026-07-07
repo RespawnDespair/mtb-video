@@ -1116,3 +1116,16 @@ def test_run_ffmpeg_progress_raises_on_failure(tmp_path):
     cmd = ["ffmpeg", "-y", "-i", str(tmp_path / "nope.mp4"), str(tmp_path / "o.mp4")]
     with pytest.raises(RuntimeError):
         video_editor._run_ffmpeg_progress(cmd, 1.0, "bad")
+
+
+def test_target_dims_evens_odd_height():
+    from intro_generator import _target_dims
+    assert _target_dims(3840, 2160, 721) == (1280, 720)   # odd height -> even
+    assert _target_dims(3840, 2160, 1080) == (1920, 1080)
+    assert _target_dims(1440, 1080, 720) == (960, 720)     # 4:3 source, aspect kept
+
+
+def test_resolve_output_height_bad_value_errors():
+    import main, pytest
+    with pytest.raises(SystemExit):
+        main.resolve_output_height("1080p", "x.mp4")

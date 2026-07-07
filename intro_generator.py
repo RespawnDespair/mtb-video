@@ -15,6 +15,13 @@ def _even(x) -> int:
     return x - (x % 2)
 
 
+def _target_dims(source_w, source_h, output_height):
+    """Compute even (width, height) for the output, preserving the source aspect."""
+    h = _even(output_height)
+    w = _even(source_w * h / source_h)
+    return w, h
+
+
 def format_moving_time(seconds: float) -> str:
     total_min = int(seconds // 60)
     h, m = divmod(total_min, 60)
@@ -116,8 +123,7 @@ def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, ar
     """Prepend the intro to the reel and re-encode at the configured resolution."""
     from highlight_detector import get_video_resolution
     sw, sh = get_video_resolution(args.video)
-    H = cfg.output_height
-    W = _even(sw * H / sh)
+    W, H = _target_dims(sw, sh, cfg.output_height)
     workdir = tempfile.mkdtemp(prefix="rhe_final_")
     try:
         intro = os.path.join(workdir, "intro.mp4")

@@ -118,7 +118,10 @@ def resolve_output_height(value, video_path) -> int:
     if isinstance(value, str) and value.strip().lower() == "source":
         from highlight_detector import get_video_resolution
         return get_video_resolution(video_path)[1]
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise SystemExit(f"--output-height must be an integer or 'source', got {value!r}")
 
 
 def print_segments(segments, scores) -> None:
