@@ -1264,3 +1264,26 @@ def test_build_intro_clip_solid_fallback_when_no_video(tmp_path):
     intro_generator.build_intro_clip(g, cfg, str(out), extra_stats=None, size=(640, 360),
                                      video_path=None, offset_seconds=0.0)
     assert out.exists() and os.path.getsize(out) > 0
+
+
+@pytest.mark.skipif(_sh5.which("ffmpeg") is None or _sh5.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_intro_clip_short_video_uses_solid_fallback(tmp_path):
+    import subprocess, intro_generator, os
+    from config import Config
+    g = _named_gpx("Rit")
+    vid = tmp_path / "short.mp4"   # 1s, shorter than the 2s intro duration
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=1",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(vid)],
+                   check=True, capture_output=True)
+    cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 10
+    out = tmp_path / "intro.mp4"
+    intro_generator.build_intro_clip(g, cfg, str(out), extra_stats=None, size=(320, 240),
+                                     video_path=str(vid), offset_seconds=0.0)
+    assert out.exists() and os.path.getsize(out) > 0
+    result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                             "-of", "csv=p=0", str(out)],
+                            capture_output=True, text=True)
+    dur = float(result.stdout.strip())
+    # Without the fallback, the intro is clamped to the 1s source video length.
+    assert abs(dur - cfg.intro_duration) < 0.5

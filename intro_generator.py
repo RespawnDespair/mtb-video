@@ -78,7 +78,7 @@ def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict
 
         # 2. background: curviest clip from the video, else solid dark
         bg_clip = None
-        if video_path:
+        if video_path and get_video_duration(video_path) >= cfg.intro_duration:
             try:
                 turn = heading_change_per_sec(gpx.coords, gpx.speeds_kmh)
                 vt = curviest_window(turn, offset_seconds, get_video_duration(video_path),
