@@ -1287,3 +1287,78 @@ def test_build_intro_clip_short_video_uses_solid_fallback(tmp_path):
     dur = float(result.stdout.strip())
     # Without the fallback, the intro is clamped to the 1s source video length.
     assert abs(dur - cfg.intro_duration) < 0.5
+
+
+def test_get_activity_fetches_and_raises(monkeypatch):
+    import strava_client, pytest
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    monkeypatch.setattr(strava_client, "_load_token",
+                        lambda: {"access_token": "t", "refresh_token": "r", "expires_at": 9e12})
+    monkeypatch.setattr(strava_client, "_refresh_if_needed", lambda tok, now_epoch: tok)
+    monkeypatch.setattr(strava_client, "_save_token", lambda tok: None)
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"name": "Rit", "distance": 1000.0}
+    cap = {}
+    def fake_get(url, headers=None, params=None, timeout=None):
+        cap["url"] = url
+        return R()
+    monkeypatch.setattr(strava_client.requests, "get", fake_get)
+    assert strava_client.get_activity("42")["name"] == "Rit"
+    assert cap["url"].endswith("/activities/42")
+
+    monkeypatch.setattr(strava_client, "is_configured", lambda: False)
+    with pytest.raises(RuntimeError):
+        strava_client.get_activity("42")
+
+
+def _fake_streams(n=3):
+    return {
+        "time": {"data": list(range(n))},
+        "latlng": {"data": [[51.80, 4.0], [51.801, 4.0], [51.802, 4.001]][:n]},
+        "altitude": {"data": [10.0, 12.0, 14.0][:n]},
+        "heartrate": {"data": [120, 130, 140][:n]},
+        "distance": {"data": [0.0, 10.0, 20.0][:n]},
+        "velocity_smooth": {"data": [0.0, 5.0, 10.0][:n]},   # m/s
+    }
+
+
+def _fake_activity():
+    return {"name": "Namiddagrit op mountainbike", "start_date": "2026-07-05T12:32:57Z",
+            "distance": 15560.0, "total_elevation_gain": 166.0, "moving_time": 2933}
+
+
+def test_gpx_from_strava_builds_track(monkeypatch):
+    import strava_gpx, strava_client
+    monkeypatch.setattr(strava_client, "get_activity", lambda aid: _fake_activity())
+    monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: _fake_streams(3))
+    g = strava_gpx.gpx_from_strava("42")
+    from datetime import timezone
+    assert g.name == "Namiddagrit op mountainbike"
+    assert g.start_time.tzinfo is not None and g.start_time.year == 2026
+    assert len(g.coords) == 3 and g.first_coord == g.coords[0]
+    assert abs(g.coords[0][0] - 51.80) < 1e-6
+    assert g.speeds_kmh == [0.0, 18.0, 36.0]          # velocity_smooth * 3.6
+    assert g.elevations_m == [10.0, 12.0, 14.0]
+    assert g.hr_bpm == [120.0, 130.0, 140.0]
+    assert abs(g.total_distance_km - 15.56) < 1e-6    # from summary
+    assert g.elevation_gain_m == 166.0 and g.moving_time_s == 2933
+
+
+def test_gpx_from_strava_no_gps_raises(monkeypatch):
+    import strava_gpx, strava_client, pytest
+    monkeypatch.setattr(strava_client, "get_activity", lambda aid: _fake_activity())
+    s = _fake_streams(3); del s["latlng"]
+    monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: s)
+    with pytest.raises(RuntimeError, match="no GPS track"):
+        strava_gpx.gpx_from_strava("42")
+
+
+def test_gpx_from_strava_speed_falls_back_to_distance(monkeypatch):
+    import strava_gpx, strava_client
+    monkeypatch.setattr(strava_client, "get_activity", lambda aid: _fake_activity())
+    s = _fake_streams(3); del s["velocity_smooth"]
+    monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: s)
+    g = strava_gpx.gpx_from_strava("42")
+    assert all(v is not None for v in g.speeds_kmh)   # derived from distance
