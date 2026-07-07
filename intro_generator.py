@@ -9,6 +9,12 @@ from config import Config
 from highlight_detector import GpxData
 
 
+def _even(x) -> int:
+    """Round to an even integer (libx264 requires even dimensions)."""
+    x = int(round(x))
+    return x - (x % 2)
+
+
 def format_moving_time(seconds: float) -> str:
     total_min = int(seconds // 60)
     h, m = divmod(total_min, 60)
@@ -39,8 +45,9 @@ def reverse_geocode(lat: float, lon: float) -> str:
     return f"{lat:.4f}, {lon:.4f}"
 
 
-def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict | None = None) -> str:
-    """Render a stats intro clip with MoviePy."""
+def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str,
+                     extra_stats: dict | None = None, size=(1920, 1080)) -> str:
+    """Render a stats intro clip with MoviePy at the given size."""
     from moviepy.editor import TextClip, ColorClip, CompositeVideoClip
 
     location = reverse_geocode(*gpx.first_coord)
@@ -57,10 +64,11 @@ def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict
         if extra_stats.get("avg_power"):
             lines.append(f"Avg Power {extra_stats['avg_power']} W")
 
-    W, H = 1920, 1080
+    W, H = size
+    fontsize = max(12, int(round(70 * H / 1080)))
     bg = ColorClip(size=(W, H), color=(15, 15, 20)).set_duration(cfg.intro_duration)
     text = "\n".join(lines)
-    txt = (TextClip(text, fontsize=70, color="white", font="Arial", method="label")
+    txt = (TextClip(text, fontsize=fontsize, color="white", font="Arial", method="label")
            .set_duration(cfg.intro_duration)
            .set_position("center"))
     clip = CompositeVideoClip([bg, txt]).set_duration(cfg.intro_duration)
@@ -85,15 +93,16 @@ def _gather_extra_stats(gpx: GpxData, args) -> dict:
     return stats
 
 
-def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: float, output: str) -> str:
-    """Concat a silent, video-only intro with the reel, giving the intro a real
-    silent audio stream via an anullsrc input so concat's pad count balances."""
+def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: float,
+                           output: str, width: int, height: int) -> str:
+    """Concat a silent, video-only intro with the reel at width×height, giving the
+    intro a real silent audio stream via an anullsrc input so concat's pads balance."""
     subprocess.run(
         ["ffmpeg", "-y", "-i", intro_path, "-i", reel_path,
          "-f", "lavfi", "-t", str(intro_duration), "-i", "anullsrc=r=44100:cl=stereo",
          "-filter_complex",
-         "[0:v]scale=1920:1080,setsar=1,fps=30[v0];"
-         "[1:v]scale=1920:1080,setsar=1,fps=30[v1];"
+         f"[0:v]scale={width}:{height},setsar=1,fps=30[v0];"
+         f"[1:v]scale={width}:{height},setsar=1,fps=30[v1];"
          "[v0][2:a][v1][1:a]concat=n=2:v=1:a=1[v][a]",
          "-map", "[v]", "-map", "[a]",
          "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output],
@@ -103,14 +112,16 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
 
 
 def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args) -> str:
-    """Prepend the intro to the reel and re-encode the concat so params match."""
+    """Prepend the intro to the reel and re-encode at the configured resolution."""
+    from highlight_detector import get_video_resolution
+    sw, sh = get_video_resolution(args.video)
+    H = cfg.output_height
+    W = _even(sw * H / sh)
     workdir = tempfile.mkdtemp(prefix="rhe_final_")
     try:
         intro = os.path.join(workdir, "intro.mp4")
         extra = _gather_extra_stats(gpx, args)
-        build_intro_clip(gpx, cfg, intro, extra)
-
-        # Re-encode both into uniform params, then concat via filter (robust across cameras).
-        return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output)
+        build_intro_clip(gpx, cfg, intro, extra, size=(W, H))
+        return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output, W, H)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

@@ -264,7 +264,7 @@ def test_concat_intro_and_reel_handles_silent_intro(tmp_path):
         check=True, capture_output=True,
     )
 
-    intro_generator._concat_intro_and_reel(str(intro), str(reel), 2.0, str(out))
+    intro_generator._concat_intro_and_reel(str(intro), str(reel), 2.0, str(out), 320, 240)
 
     assert out.exists()
     assert out.stat().st_size > 0
@@ -1057,3 +1057,36 @@ def test_resolve_output_height_int():
     import main
     assert main.resolve_output_height("2160", "x.mp4") == 2160
     assert main.resolve_output_height("1080", "x.mp4") == 1080
+
+
+import shutil as _sh3
+
+
+@pytest.mark.skipif(_sh3.which("ffmpeg") is None or _sh3.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_final_video_respects_output_height(tmp_path, monkeypatch):
+    import subprocess
+    from datetime import datetime, timezone
+    from config import Config
+    from highlight_detector import GpxData
+    import intro_generator
+    # a 16:9 reel (also used as the aspect source)
+    reel = tmp_path / "reel.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:d=2",
+                    "-f", "lavfi", "-i", "sine=d=2", "-c:v", "libx264", "-pix_fmt",
+                    "yuv420p", "-c:a", "aac", "-shortest", str(reel)],
+                   check=True, capture_output=True)
+    monkeypatch.setattr(intro_generator, "reverse_geocode", lambda lat, lon: "Test, NL")
+    g = GpxData(start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
+                speeds_kmh=[10], coords=[(52.0, 4.0)], elevations_m=[5.0], hr_bpm=[100],
+                cum_distance_m=[0.0], total_distance_km=5.0, elevation_gain_m=20.0,
+                moving_time_s=600.0, first_coord=(52.0, 4.0))
+    cfg = Config(); cfg.output_height = 720
+    class A:
+        video = str(reel); strava = False; garmin = False
+    out = tmp_path / "final.mp4"
+    intro_generator.build_final_video(str(reel), g, cfg, str(out), A())
+    h = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=height", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True).stdout.strip()
+    assert h == "720"
