@@ -1428,3 +1428,38 @@ def test_resolve_gpx_source_strava_error_clean_exit(monkeypatch):
         gpx = None; strava_activity_id = "42"
     with pytest.raises(SystemExit):
         main.resolve_gpx_source(A())
+
+
+import shutil as _sh6
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_decode_pcm_length(tmp_path):
+    import subprocess, music_loop
+    src = tmp_path / "t.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:d=2",
+                    str(src)], check=True, capture_output=True)
+    x = music_loop._decode_pcm(str(src), sr=22050)
+    assert x.dtype.name == "float32" and abs(len(x) - 2 * 22050) < 22050  # ~2s @ 22050
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_detect_loop_on_periodic_tone(tmp_path):
+    import subprocess, music_loop
+    # 40s steady sine -> highly self-similar; a >=8s seamless loop should be found
+    src = tmp_path / "tone.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=200:d=40",
+                    str(src)], check=True, capture_output=True)
+    ls, le = music_loop.detect_loop(str(src), min_loop_seconds=8.0)
+    assert le - ls >= 8.0 - 1e-6
+    assert 5.0 <= ls and le <= 40.0
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_detect_loop_short_track_fallback(tmp_path):
+    import subprocess, music_loop
+    src = tmp_path / "short.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=200:d=3",
+                    str(src)], check=True, capture_output=True)
+    ls, le = music_loop.detect_loop(str(src), min_loop_seconds=8.0)
+    assert ls == 0.0 and le > 0.0     # too short -> whole-track fallback
