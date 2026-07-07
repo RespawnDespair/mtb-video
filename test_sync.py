@@ -1616,8 +1616,26 @@ def test_build_clip_sources_shared_correction_and_sort(monkeypatch):
     srcs = clip_sources.build_clip_sources(["B.mp4", "A.mp4"], gpx=object(), cfg=object(),
                                            offset_override=577.0)
     assert [s.path for s in srcs] == ["A.mp4", "B.mp4"]        # sorted by base_offset
-    assert srcs[0].base_offset == 300.0 + 577.0                # correction added per file
-    assert srcs[1].base_offset == 1000.0 + 577.0
+    # --sync-offset anchors the EARLIEST-recorded file (A, own offset 300) at 577; the
+    # other file keeps its recording-time delta (1000-300=700) relative to it.
+    assert srcs[0].base_offset == 577.0                        # A anchored at the override
+    assert srcs[1].base_offset == 577.0 + (1000.0 - 300.0)     # B = anchor + delta
+
+
+def test_build_clip_sources_no_override_uses_raw_offsets(monkeypatch):
+    import clip_sources, highlight_detector
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    bases = {"B.mp4": 1000.0, "A.mp4": 300.0}
+    monkeypatch.setattr(highlight_detector, "resolve_sync_offset",
+        lambda path, gpx, cfg, offset_override=None, use_auto=False: SimpleNamespace(
+            offset_used=bases[path], offset_source="metadata",
+            video_creation_time=datetime(2026,7,5,tzinfo=timezone.utc)))
+    monkeypatch.setattr(clip_sources, "get_video_duration", lambda p: 60.0)
+    monkeypatch.setattr(clip_sources, "get_video_resolution", lambda p: (1920, 1080))
+    srcs = clip_sources.build_clip_sources(["B.mp4", "A.mp4"], gpx=object(), cfg=object())
+    # no --sync-offset: raw per-file recording offsets, unchanged
+    assert srcs[0].base_offset == 300.0 and srcs[1].base_offset == 1000.0
 
 
 def test_efforts_to_activity_ranges():

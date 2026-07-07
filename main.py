@@ -109,7 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inspect", action="store_true",
                    help="Print a sync/segment diagnosis report and render nothing.")
     p.add_argument("--sync-offset", type=float, default=None,
-                   help="Force the sync offset in seconds (video_t -> activity_t + offset).")
+                   help="Force the sync offset in seconds (video_t -> activity_t + offset). "
+                        "With multiple --video files it anchors the earliest-recorded file "
+                        "at this offset; the others follow by their recording-time deltas.")
     p.add_argument("--auto-sync", action="store_true",
                    help="Use motion/GPS cross-correlation to pick the offset for rendering.")
     p.add_argument("--mode", choices=["auto", "segments", "flow"], default="auto",

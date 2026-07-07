@@ -16,11 +16,16 @@ file — rendering only the ride portions that actually have footage.
   multiple rides). Selection runs on the ride timeline unchanged.
 - Each file is placed on the ride timeline by its **own recording time**
   (`creation_time` metadata → filename `VID_YYYYMMDD_HHMMSS` → file mtime), i.e. the
-  existing offset chain applied per file. A **single shared correction** (`--sync-offset`,
-  default 0) is added to every file — same camera, same clock deviation.
-  - Worked example (ride start 13:00:00, `--sync-offset 577`): file A recorded 13:05
-    → base 300 + 577 = **877 s**; file B recorded 13:18 → base 1080 + 577 = **1657 s**.
-    Different positions, same correction.
+  existing offset chain applied per file. The **relative spacing** between files (same
+  camera) is trusted. `--sync-offset` **anchors the earliest-recorded file** at that
+  value — the same absolute meaning it has for a single file — and the others follow by
+  their recording-time deltas, so one value corrects a constant camera-clock skew.
+  (Correction superseded: an earlier draft *added* `--sync-offset` to every file's own
+  offset, which double-counted the anchor file's own offset and mis-aligned everything;
+  anchoring the earliest file matches single-file semantics.)
+  - Worked example (`--sync-offset 577`, files A@own-offset 300 s and B@own-offset
+    1080 s): A is earliest → anchored at **577 s**; B = 577 + (1080 − 300) = **1357 s**.
+    Same delta (780 s) between them, anchored so A matches its single-file placement.
 - **Offset semantics fork (backward compatible):** with **one** `--video` file,
   `--sync-offset` keeps its current meaning (absolute override of that file's offset).
   With **multiple** files it is the shared additive correction on each file's own

@@ -46,11 +46,14 @@ track's natural outro, mixed under the whole video (intro included).
 ### Multiple video files
 
 `--video` accepts several files that jointly cover one ride:
-`--video clip1.mp4 clip2.mp4 clip3.mp4`. Each file is placed on the ride by its own
-recording time; use `--sync-offset` for a single shared camera-clock correction applied
-to all files. The segment/highlight selection runs on the ride as usual; only ride
-portions that actually have footage are rendered (uncovered segments are dropped with a
-warning). One `--video` file behaves exactly as before.
+`--video clip1.mp4 clip2.mp4 clip3.mp4`. Files are placed on the ride by their recording
+time, and their relative spacing (same camera) is trusted. `--sync-offset` **anchors the
+earliest-recorded file** at that offset — the same absolute meaning it has for a single
+file — and the other files follow by their recording-time deltas, so one value corrects a
+constant camera-clock skew across all of them. The segment/highlight selection runs on
+the ride as usual; only ride portions that actually have footage are rendered (uncovered
+segments are dropped with a warning), and `--pick` numbers just the covered segments. One
+`--video` file behaves exactly as before.
 
 Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
 Deeper tuning lives in `config.py`.

@@ -32,16 +32,31 @@ class RenderPart:
 
 def build_clip_sources(video_paths, gpx, cfg, offset_override=None,
                        use_auto=False) -> list:
-    """Place each file on the ride timeline via its own recording-time offset plus one
-    shared additive correction (offset_override). Multi-file path only."""
-    correction = float(offset_override or 0.0)
-    sources = []
+    """Place each file on the ride timeline.
+
+    Each file gets its own recording-time offset (creation_time / filename / mtime) via
+    resolve_sync_offset. The relative spacing between files comes from those offsets and
+    is reliable (same camera). When --sync-offset is given it ANCHORS the earliest-
+    recorded file at that value — exactly the absolute meaning it has for a single file —
+    and the other files are placed by their recording-time deltas relative to it (so a
+    single shared correction fixes a constant camera-clock skew across all files). With
+    no --sync-offset the raw per-file recording offsets are used as-is."""
+    probed = []
     for path in video_paths:
-        r = highlight_detector.resolve_sync_offset(path, gpx, cfg, offset_override=None, use_auto=use_auto)
+        r = highlight_detector.resolve_sync_offset(path, gpx, cfg, offset_override=None,
+                                                   use_auto=use_auto)
         w, h = get_video_resolution(path)
+        probed.append((path, r, w, h, get_video_duration(path)))
+
+    ref = min(r.offset_used for _, r, _, _, _ in probed)  # earliest-recorded file
+    sources = []
+    for path, r, w, h, dur in probed:
+        if offset_override is not None:
+            base = float(offset_override) + (r.offset_used - ref)
+        else:
+            base = r.offset_used
         sources.append(ClipSource(
-            path=path, base_offset=r.offset_used + correction,
-            duration=get_video_duration(path), width=w, height=h,
+            path=path, base_offset=base, duration=dur, width=w, height=h,
             creation_time=r.video_creation_time, offset_source=r.offset_source))
     sources.sort(key=lambda s: s.base_offset)
 
