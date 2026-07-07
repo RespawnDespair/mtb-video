@@ -1463,3 +1463,37 @@ def test_detect_loop_short_track_fallback(tmp_path):
                     str(src)], check=True, capture_output=True)
     ls, le = music_loop.detect_loop(str(src), min_loop_seconds=8.0)
     assert ls == 0.0 and le > 0.0     # too short -> whole-track fallback
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_music_bed_long_exact_duration(tmp_path):
+    import subprocess, music_bed
+    from config import Config
+    src = tmp_path / "m.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
+                    str(src)], check=True, capture_output=True)
+    out = tmp_path / "bed.m4a"
+    cfg = Config(); cfg.music_outro_seconds = 6.0; cfg.music_crossfade_seconds = 1.0
+    # loop [10,25], target 60 -> needs head+loop-fill+outro
+    music_bed.build_music_bed(str(src), 60.0, 10.0, 25.0, str(out), cfg)
+    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
+    assert abs(d - 60.0) < 0.3
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_music_bed_short_linear(tmp_path):
+    import subprocess, music_bed
+    from config import Config
+    src = tmp_path / "m.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
+                    str(src)], check=True, capture_output=True)
+    out = tmp_path / "bed.m4a"
+    cfg = Config()
+    # target 8 < loop_end(25)+outro-xf -> linear branch
+    music_bed.build_music_bed(str(src), 8.0, 10.0, 25.0, str(out), cfg)
+    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
+    assert abs(d - 8.0) < 0.3
