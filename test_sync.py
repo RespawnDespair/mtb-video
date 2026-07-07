@@ -1090,3 +1090,29 @@ def test_final_video_respects_output_height(tmp_path, monkeypatch):
                         "-show_entries", "stream=height", "-of", "csv=p=0", str(out)],
                        capture_output=True, text=True).stdout.strip()
     assert h == "720"
+
+
+import shutil as _sh4
+
+
+@pytest.mark.skipif(_sh4.which("ffmpeg") is None,
+                    reason="ffmpeg not installed")
+def test_run_ffmpeg_progress_encodes(tmp_path):
+    import subprocess, video_editor
+    src = tmp_path / "s.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)],
+                   check=True, capture_output=True)
+    out = tmp_path / "o.mp4"
+    cmd = ["ffmpeg", "-y", "-i", str(src), "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)]
+    video_editor._run_ffmpeg_progress(cmd, 2.0, "test-encode")   # must not raise
+    assert out.exists() and out.stat().st_size > 0
+
+
+@pytest.mark.skipif(_sh4.which("ffmpeg") is None,
+                    reason="ffmpeg not installed")
+def test_run_ffmpeg_progress_raises_on_failure(tmp_path):
+    import video_editor, pytest
+    cmd = ["ffmpeg", "-y", "-i", str(tmp_path / "nope.mp4"), str(tmp_path / "o.mp4")]
+    with pytest.raises(RuntimeError):
+        video_editor._run_ffmpeg_progress(cmd, 1.0, "bad")

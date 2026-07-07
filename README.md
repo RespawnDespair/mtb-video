@@ -72,6 +72,11 @@ per-second **streams** (smoothed speed, heart rate, power, grade) rather than
 values computed from the GPX — more accurate, and it adds a power (W) readout.
 Missing streams fall back to the GPX data per field.
 
+Output resolution defaults to 1080p. Render at the source resolution (e.g. 4K) with
+`--output-height source` (or a specific height like `--output-height 1440`); width
+follows the source aspect and the HUD scales with it. The two heavy encodes
+(per-clip overlay and final assembly) show a live percentage.
+
 ### Fixing sync (copied videos with wrong timestamps)
 
 If the video's `creation_time` was altered by copying, the GPX↔video alignment is

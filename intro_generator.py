@@ -97,17 +97,18 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
                            output: str, width: int, height: int) -> str:
     """Concat a silent, video-only intro with the reel at width×height, giving the
     intro a real silent audio stream via an anullsrc input so concat's pads balance."""
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", intro_path, "-i", reel_path,
-         "-f", "lavfi", "-t", str(intro_duration), "-i", "anullsrc=r=44100:cl=stereo",
-         "-filter_complex",
-         f"[0:v]scale={width}:{height},setsar=1,fps=30[v0];"
-         f"[1:v]scale={width}:{height},setsar=1,fps=30[v1];"
-         "[v0][2:a][v1][1:a]concat=n=2:v=1:a=1[v][a]",
-         "-map", "[v]", "-map", "[a]",
-         "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output],
-        check=True, capture_output=True,
-    )
+    from video_editor import _run_ffmpeg_progress
+    from highlight_detector import get_video_duration
+    cmd = ["ffmpeg", "-y", "-i", intro_path, "-i", reel_path,
+           "-f", "lavfi", "-t", str(intro_duration), "-i", "anullsrc=r=44100:cl=stereo",
+           "-filter_complex",
+           f"[0:v]scale={width}:{height},setsar=1,fps=30[v0];"
+           f"[1:v]scale={width}:{height},setsar=1,fps=30[v1];"
+           "[v0][2:a][v1][1:a]concat=n=2:v=1:a=1[v][a]",
+           "-map", "[v]", "-map", "[a]",
+           "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", output]
+    total = intro_duration + get_video_duration(reel_path)
+    _run_ffmpeg_progress(cmd, total, "Eindmontage")
     return output
 
 

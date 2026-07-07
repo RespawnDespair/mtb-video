@@ -18,6 +18,27 @@ def _log(msg, end="\n"):
     print(msg, end=end, file=sys.stderr, flush=True)
 
 
+def _run_ffmpeg_progress(cmd, total_seconds, label):
+    """Run an ffmpeg command, printing a \\r percentage parsed from -progress output.
+    Raises RuntimeError on a non-zero exit (like check=True)."""
+    # Inject the progress/nostats global options right after the 'ffmpeg' program.
+    full = [cmd[0], "-nostats", "-progress", "pipe:1"] + cmd[1:]
+    with tempfile.TemporaryFile(mode="w+") as errf:
+        proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=errf, text=True)
+        for line in proc.stdout:
+            line = line.strip()
+            if line.startswith("out_time_us=") and total_seconds > 0:
+                raw = line.split("=", 1)[1]
+                if raw.isdigit():
+                    pct = min(100.0, int(raw) / 1_000_000 / total_seconds * 100)
+                    _log(f"\r{label} — {pct:3.0f}%", end="")
+        proc.wait()
+        _log("")  # end the \r line
+        if proc.returncode != 0:
+            errf.seek(0)
+            raise RuntimeError(f"ffmpeg failed ({label}):\n{errf.read()[-800:]}")
+
+
 def _escape_drawtext(text: str) -> str:
     """Escape characters special to FFmpeg drawtext text values."""
     text = text.replace("\\", "\\\\")
@@ -183,14 +204,13 @@ def build_segment_reel(video_path, clips, music_path, cfg: Config,
             _log(f"[{i + 1}/{n}] {clip.name} ({dur:.1f}s) — HUD-frames renderen…")
             try:
                 pattern = _render_hud_pngs(video_path, clip, source, gpx, offset_seconds, workdir, cfg)
-                _log(f"[{i + 1}/{n}] {clip.name} — overlay encoderen…")
-                subprocess.run(
-                    ["ffmpeg", "-y", "-ss", str(clip.start), "-t", str(dur), "-i", video_path,
-                     "-framerate", str(cfg.hud_fps), "-i", pattern,
-                     "-filter_complex", "[0:v][1:v]overlay=0:0:shortest=1[v]",
-                     "-map", "[v]", "-map", "0:a?",
-                     "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", part],
-                    check=True, capture_output=True)
+                overlay_cmd = [
+                    "ffmpeg", "-y", "-ss", str(clip.start), "-t", str(dur), "-i", video_path,
+                    "-framerate", str(cfg.hud_fps), "-i", pattern,
+                    "-filter_complex", "[0:v][1:v]overlay=0:0:shortest=1[v]",
+                    "-map", "[v]", "-map", "0:a?",
+                    "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", part]
+                _run_ffmpeg_progress(overlay_cmd, dur, f"[{i + 1}/{n}] {clip.name} — overlay encoderen")
                 part_paths.append(part)
                 continue
             except Exception as e:
