@@ -29,6 +29,7 @@ class GpxData:
     elevations_m: list = field(default_factory=list)      # per-second, forward-filled
     hr_bpm: list = field(default_factory=list)             # per-second, None where absent
     cum_distance_m: list = field(default_factory=list)     # per-second cumulative distance
+    name: "str | None" = None
 
 
 def _parse_hr(point):
@@ -100,6 +101,14 @@ def load_gpx(path: str) -> GpxData:
     """Parse a GPX file into a per-second GpxData series."""
     with open(path, "r") as f:
         gpx = gpxpy.parse(f)
+
+    gpx_name = None
+    for track in gpx.tracks:
+        if track.name:
+            gpx_name = track.name
+            break
+    if gpx_name is None:
+        gpx_name = getattr(gpx, "name", None)
 
     points = [p for track in gpx.tracks for seg in track.segments for p in seg.points]
     if not points:
@@ -190,6 +199,7 @@ def load_gpx(path: str) -> GpxData:
         elevations_m=elevations,
         hr_bpm=hrs,
         cum_distance_m=cumdist,
+        name=gpx_name,
     )
 
 

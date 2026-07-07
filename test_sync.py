@@ -1129,3 +1129,28 @@ def test_resolve_output_height_bad_value_errors():
     import main, pytest
     with pytest.raises(SystemExit):
         main.resolve_output_height("1080p", "x.mp4")
+
+
+import textwrap as _tw
+
+NAMED_GPX = _tw.dedent("""\
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="t" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Namiddagrit op mountainbike</name><trkseg>
+    <trkpt lat="46.0" lon="7.0"><ele>10</ele><time>2026-07-06T10:00:00Z</time></trkpt>
+    <trkpt lat="46.0001" lon="7.0"><ele>11</ele><time>2026-07-06T10:00:01Z</time></trkpt>
+  </trkseg></trk>
+</gpx>
+""")
+
+
+def test_load_gpx_reads_track_name(tmp_path):
+    from highlight_detector import load_gpx
+    p = tmp_path / "n.gpx"; p.write_text(NAMED_GPX)
+    assert load_gpx(str(p)).name == "Namiddagrit op mountainbike"
+
+
+def test_load_gpx_name_none_when_absent(tmp_path):
+    from highlight_detector import load_gpx
+    p = tmp_path / "p.gpx"; p.write_text(SYNTHETIC_GPX)   # existing fixture, no <name>
+    assert load_gpx(str(p)).name is None
