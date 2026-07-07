@@ -1529,3 +1529,92 @@ def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
                             "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(out)],
                            capture_output=True, text=True).stdout.strip()
     assert out.exists() and codec == "audio"
+
+
+def _src(base, dur, path="x.mp4", w=1920, h=1080):
+    import clip_sources
+    from datetime import datetime, timezone
+    return clip_sources.ClipSource(path=path, base_offset=base, duration=dur, width=w,
+                                   height=h, creation_time=datetime(2026,7,5,tzinfo=timezone.utc),
+                                   offset_source="metadata")
+
+
+def test_render_parts_fully_inside_one_source():
+    import clip_sources
+    s = _src(100.0, 60.0, "A.mp4")           # covers ride 100..160
+    parts, dropped = clip_sources.resolve_render_parts([s], [(110.0, 130.0, "seg", {})])
+    assert dropped == []
+    assert len(parts) == 1
+    p = parts[0]
+    assert p.source_path == "A.mp4"
+    assert abs(p.local_start - 10.0) < 1e-6 and abs(p.local_end - 30.0) < 1e-6
+    assert p.base_offset == 100.0 and p.name == "seg"
+
+
+def test_render_parts_partial_coverage_is_clamped():
+    import clip_sources
+    s = _src(100.0, 60.0, "A.mp4")           # 100..160
+    parts, dropped = clip_sources.resolve_render_parts([s], [(150.0, 200.0, "seg", {})])
+    assert len(parts) == 1 and dropped == []
+    assert abs(parts[0].local_start - 50.0) < 1e-6
+    assert abs(parts[0].local_end - 60.0) < 1e-6   # clamped to source end (160 ride)
+
+
+def test_render_parts_spanning_two_sources_splits_in_order():
+    import clip_sources
+    a = _src(0.0, 100.0, "A.mp4")            # 0..100
+    b = _src(100.0, 100.0, "B.mp4")          # 100..200
+    parts, dropped = clip_sources.resolve_render_parts([a, b], [(80.0, 140.0, "seg", {})])
+    assert dropped == [] and len(parts) == 2
+    assert parts[0].source_path == "A.mp4" and abs(parts[0].local_start - 80.0) < 1e-6
+    assert abs(parts[0].local_end - 100.0) < 1e-6
+    assert parts[1].source_path == "B.mp4" and abs(parts[1].local_start - 0.0) < 1e-6
+    assert abs(parts[1].local_end - 40.0) < 1e-6
+
+
+def test_render_parts_no_coverage_is_dropped_and_reported():
+    import clip_sources
+    s = _src(0.0, 50.0, "A.mp4")             # 0..50
+    parts, dropped = clip_sources.resolve_render_parts([s], [(100.0, 120.0, "ver weg", {})])
+    assert parts == [] and dropped == ["ver weg"]
+
+
+def test_render_parts_overlapping_sources_render_each_second_once():
+    import clip_sources
+    a = _src(0.0, 120.0, "A.mp4")            # 0..120
+    b = _src(60.0, 120.0, "B.mp4")           # 60..180 (overlaps A on 60..120)
+    parts, dropped = clip_sources.resolve_render_parts([a, b], [(50.0, 170.0, "seg", {})])
+    # union of covered ride time == 50..170; no ride-second twice
+    covered = sorted((p.base_offset + p.local_start, p.base_offset + p.local_end) for p in parts)
+    total = sum(e - s for s, e in covered)
+    assert abs(total - 120.0) < 1e-6            # 170-50, counted once
+    # intervals must not overlap
+    for (s1, e1), (s2, e2) in zip(covered, covered[1:]):
+        assert e1 <= s2 + 1e-6
+
+
+def test_render_parts_sorted_by_ride_time():
+    import clip_sources
+    a = _src(0.0, 50.0, "A.mp4")
+    b = _src(100.0, 50.0, "B.mp4")
+    parts, _ = clip_sources.resolve_render_parts([a, b],
+        [(120.0, 140.0, "late", {}), (10.0, 20.0, "vroeg", {})])
+    assert [p.name for p in parts] == ["vroeg", "late"]
+
+
+def test_build_clip_sources_shared_correction_and_sort(monkeypatch):
+    import clip_sources, highlight_detector
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    bases = {"B.mp4": 1000.0, "A.mp4": 300.0}
+    monkeypatch.setattr(highlight_detector, "resolve_sync_offset",
+        lambda path, gpx, cfg, offset_override=None, use_auto=False: SimpleNamespace(
+            offset_used=bases[path], offset_source="metadata",
+            video_creation_time=datetime(2026,7,5,tzinfo=timezone.utc)))
+    monkeypatch.setattr(clip_sources, "get_video_duration", lambda p: 60.0)
+    monkeypatch.setattr(clip_sources, "get_video_resolution", lambda p: (1920, 1080))
+    srcs = clip_sources.build_clip_sources(["B.mp4", "A.mp4"], gpx=object(), cfg=object(),
+                                           offset_override=577.0)
+    assert [s.path for s in srcs] == ["A.mp4", "B.mp4"]        # sorted by base_offset
+    assert srcs[0].base_offset == 300.0 + 577.0                # correction added per file
+    assert srcs[1].base_offset == 1000.0 + 577.0
