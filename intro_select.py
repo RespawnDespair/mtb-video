@@ -42,3 +42,23 @@ def curviest_window(turn, offset_seconds, video_duration, clip_len):
     if best_a is None:
         return 0.0
     return max(0.0, float(best_a - off))
+
+
+def curviest_window_across(sources, turn, clip_len):
+    """Across all sources' covered ride spans, pick the (source_path, local_start) whose
+    clip_len window has the highest summed heading change. Falls back to the first
+    source at local 0.0 if nothing scores."""
+    clip = int(round(clip_len))
+    best = (None, 0.0, -1.0)          # (path, local_start, score)
+    for s in sources:
+        lo = int(round(s.base_offset))
+        hi = int(round(s.base_offset + s.duration)) - clip
+        for a in range(max(0, lo), hi + 1):
+            if a + clip > len(turn):
+                break
+            score = sum(turn[a:a + clip])
+            if score > best[2]:
+                best = (s.path, float(a - s.base_offset), score)
+    if best[0] is None:
+        return (sources[0].path, 0.0) if sources else ("", 0.0)
+    return best[0], max(0.0, best[1])

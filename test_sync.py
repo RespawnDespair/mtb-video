@@ -1714,3 +1714,16 @@ def test_build_reel_from_parts_hud_two_named_parts(tmp_path):
     codecs = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
                              "-of", "csv=p=0", reel], capture_output=True, text=True).stdout.split()
     assert "video" in codecs and "audio" in codecs
+
+
+def test_curviest_window_across_picks_best_source():
+    import intro_select
+    from test_sync import _src  # helper from Task 1
+    a = _src(0.0, 10.0, "A.mp4")      # ride 0..10
+    b = _src(100.0, 10.0, "B.mp4")    # ride 100..110
+    turn = [0.0] * 200
+    for t in range(100, 108):         # curvy stretch lives in B's span
+        turn[t] = 5.0
+    path, local = intro_select.curviest_window_across([a, b], turn, clip_len=4.0)
+    assert path == "B.mp4"
+    assert 0.0 <= local <= 6.0

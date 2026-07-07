@@ -53,7 +53,8 @@ def reverse_geocode(lat: float, lon: float) -> str:
 
 
 def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict | None = None,
-                     size=(1920, 1080), video_path=None, offset_seconds=0.0, gpx_path=None) -> str:
+                     size=(1920, 1080), video_path=None, offset_seconds=0.0, gpx_path=None,
+                     sources=None) -> str:
     """Render the animated intro: curviest bg clip (dimmed) + route-draw overlay."""
     import intro_renderer
     from intro_select import heading_change_per_sec, curviest_window
@@ -76,17 +77,24 @@ def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict
             frame.save(os.path.join(frames_dir, f"f_{i:05d}.png"))
         pattern = os.path.join(frames_dir, "f_%05d.png")
 
-        # 2. background: curviest clip from the video, else solid dark
+        # 2. background: curviest clip across sources (multi) or the single video, else solid dark
         bg_clip = None
-        if video_path and get_video_duration(video_path) >= cfg.intro_duration:
+        turn = heading_change_per_sec(gpx.coords, gpx.speeds_kmh)
+        if sources:
+            from intro_select import curviest_window_across
+            bg_source, vt = curviest_window_across(sources, turn, cfg.intro_duration)
+        elif video_path and get_video_duration(video_path) >= cfg.intro_duration:
+            vt = curviest_window(turn, offset_seconds, get_video_duration(video_path),
+                                 cfg.intro_duration)
+            bg_source = video_path
+        else:
+            bg_source = None
+        if bg_source:
             try:
-                turn = heading_change_per_sec(gpx.coords, gpx.speeds_kmh)
-                vt = curviest_window(turn, offset_seconds, get_video_duration(video_path),
-                                     cfg.intro_duration)
                 bg_clip = os.path.join(workdir, "bg.mp4")
                 subprocess.run(
                     ["ffmpeg", "-y", "-ss", str(vt), "-t", str(cfg.intro_duration),
-                     "-i", video_path, "-vf", f"scale={W}:{H}", "-an", bg_clip],
+                     "-i", bg_source, "-vf", f"scale={W}:{H}", "-an", bg_clip],
                     check=True, capture_output=True)
             except Exception as e:
                 print(f"[warn] intro background clip unavailable ({e}); using solid background.")
@@ -188,19 +196,24 @@ def _apply_music(combined_path: str, output: str, args, cfg: Config) -> str:
 
 
 def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args,
-                      offset_seconds: float = 0.0) -> str:
+                      offset_seconds: float = 0.0, sources=None) -> str:
     """Prepend the intro to the reel, re-encode at the configured resolution, and
     (if --music was given) mix an adaptive music bed under the whole video."""
     from highlight_detector import get_video_resolution
-    sw, sh = get_video_resolution(args.video)
+    if sources:
+        sw, sh = sources[0].width, sources[0].height
+    else:
+        sw, sh = get_video_resolution(args.video[0] if isinstance(args.video, list) else args.video)
     W, H = _target_dims(sw, sh, cfg.output_height)
     workdir = tempfile.mkdtemp(prefix="rhe_final_")
     try:
         intro = os.path.join(workdir, "intro.mp4")
         extra = _gather_extra_stats(gpx, args)
         build_intro_clip(gpx, cfg, intro, extra, size=(W, H),
-                         video_path=args.video, offset_seconds=offset_seconds,
-                         gpx_path=getattr(args, "gpx", None))
+                         video_path=(None if sources else
+                                     (args.video[0] if isinstance(args.video, list) else args.video)),
+                         offset_seconds=offset_seconds, gpx_path=getattr(args, "gpx", None),
+                         sources=sources)
         music = getattr(args, "music", None)
         target = os.path.join(workdir, "combined.mp4") if music else output
         _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, target, W, H)
