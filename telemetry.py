@@ -69,6 +69,21 @@ def _resample(times, data, n):
     return [float(np.interp(x, ts, vs)) for x in range(n)]
 
 
+def _speed_from_distance(cum_distance_m, n):
+    """Per-second km/h from a per-second cumulative-distance series, via a ±1s
+    central difference (responsive, minimally smoothed)."""
+    speeds = []
+    for s in range(n):
+        lo = max(0, s - 1)
+        hi = min(n - 1, s + 1)
+        dt = hi - lo
+        if dt <= 0:
+            speeds.append(0.0)
+        else:
+            speeds.append((cum_distance_m[hi] - cum_distance_m[lo]) / dt * 3.6)
+    return speeds
+
+
 def telemetry_from_streams(streams: dict, gpx) -> TelemetrySeries:
     """Build a per-second TelemetrySeries from Strava streams, GPX-filling gaps."""
     def data(key):
@@ -78,13 +93,22 @@ def telemetry_from_streams(streams: dict, gpx) -> TelemetrySeries:
     n = len(gpx.speeds_kmh)
     times = data("time") or list(range(n))
 
-    vel = data("velocity_smooth")
-    if vel:
-        _rv = _resample(times, vel, n)
-        speeds = ([v * 3.6 for v in _rv] if any(v is not None for v in _rv)
-                  else list(gpx.speeds_kmh))
+    dist = data("distance")
+    cum_distance = _resample(times, dist, n) if dist else list(gpx.cum_distance_m)
+
+    # Speed: prefer the distance-stream derivative — it reacts to braking/accel far
+    # faster than Strava's heavily-smoothed velocity_smooth. Fall back to
+    # velocity_smooth, then to the GPX-computed speed.
+    if dist:
+        speeds = _speed_from_distance(cum_distance, n)
     else:
-        speeds = list(gpx.speeds_kmh)
+        vel = data("velocity_smooth")
+        if vel:
+            _rv = _resample(times, vel, n)
+            speeds = ([v * 3.6 for v in _rv] if any(v is not None for v in _rv)
+                      else list(gpx.speeds_kmh))
+        else:
+            speeds = list(gpx.speeds_kmh)
 
     alt = data("altitude")
     elevations = _resample(times, alt, n) if alt else list(gpx.elevations_m)
@@ -97,9 +121,6 @@ def telemetry_from_streams(streams: dict, gpx) -> TelemetrySeries:
 
     grade = data("grade_smooth")
     slopes = _resample(times, grade, n) if grade else None
-
-    dist = data("distance")
-    cum_distance = _resample(times, dist, n) if dist else list(gpx.cum_distance_m)
 
     ll = data("latlng")
     if ll:

@@ -905,7 +905,9 @@ def test_telemetry_from_streams_maps_and_scales():
     g = _gpx_n(3)
     ts = telemetry_from_streams(_streams(3), g)
     assert isinstance(ts, TelemetrySeries)
-    assert ts.speeds_kmh == [0.0, 18.0, 36.0]      # velocity_smooth * 3.6
+    # speed comes from the distance derivative (distance 0,10,20 = 10 m/s = 36 km/h),
+    # which takes priority over velocity_smooth
+    assert ts.speeds_kmh == [36.0, 36.0, 36.0]
     assert ts.watts == [100.0, 200.0, 300.0]
     assert ts.slopes_pct == [1.0, 2.0, 3.0]        # grade_smooth
     assert ts.hr_bpm == [120.0, 130.0, 140.0]
@@ -914,10 +916,10 @@ def test_telemetry_from_streams_maps_and_scales():
 def test_telemetry_from_streams_missing_watts_falls_back():
     g = _gpx_n(3)
     s = _streams(3); del s["watts"]
-    del s["velocity_smooth"]
+    del s["velocity_smooth"]; del s["distance"]
     ts = telemetry_from_streams(s, g)
     assert all(w is None for w in ts.watts)         # no watts -> all None
-    assert ts.speeds_kmh == g.speeds_kmh            # missing velocity -> GPX speed
+    assert ts.speeds_kmh == g.speeds_kmh            # no distance/velocity -> GPX speed
 
 
 def test_sample_telemetry_from_stream_source_has_power_and_stream_slope():
@@ -925,7 +927,7 @@ def test_sample_telemetry_from_stream_source_has_power_and_stream_slope():
     g = _gpx_n(3)
     ts = telemetry_from_streams(_streams(3), g)
     s = sample_telemetry(ts, activity_time_s=1.0, segment_start_s=0.0)
-    assert abs(s.speed_kmh - 18.0) < 1e-6
+    assert abs(s.speed_kmh - 36.0) < 1e-6          # distance derivative (10 m/s)
     assert s.power_w == 200.0
     assert abs(s.slope_pct - 2.0) < 1e-6            # from grade_smooth, not computed
 
@@ -1018,3 +1020,19 @@ def test_resample_drops_none_entries():
 def test_resample_all_none_returns_none_list():
     from telemetry import _resample
     assert _resample([0, 1, 2], [None, None, None], 3) == [None, None, None]
+
+
+def test_telemetry_speed_prefers_distance_derivative():
+    g = _gpx_n(4)
+    streams = {"time": {"data": [0, 1, 2, 3]},
+               "distance": {"data": [0.0, 10.0, 20.0, 30.0]},        # 10 m/s -> 36 km/h
+               "velocity_smooth": {"data": [5.0, 5.0, 5.0, 5.0]}}    # 18 km/h (ignored)
+    ts = telemetry_from_streams(streams, g)
+    assert all(abs(s - 36.0) < 1e-6 for s in ts.speeds_kmh)          # distance wins
+
+
+def test_telemetry_speed_falls_back_to_velocity_without_distance():
+    g = _gpx_n(3)
+    streams = {"time": {"data": [0, 1, 2]}, "velocity_smooth": {"data": [5.0, 5.0, 5.0]}}
+    ts = telemetry_from_streams(streams, g)
+    assert all(abs(s - 18.0) < 1e-6 for s in ts.speeds_kmh)
