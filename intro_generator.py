@@ -152,9 +152,19 @@ def _apply_music(combined_path: str, output: str, args, cfg: Config) -> str:
     from video_editor import _run_ffmpeg_progress
     try:
         import music_bed
+        from music_loop import detect_loop
         ls, le = args.music_loop_start, args.music_loop_end
+        if ls is not None and le is None or ls is None and le is not None:
+            print("[warn] geef zowel --music-loop-start als --music-loop-end; "
+                  "loop wordt automatisch gedetecteerd.")
+            ls = le = None
+        if ls is not None and le is not None:
+            track_dur = get_video_duration(args.music)
+            if not (0.0 <= ls < le <= track_dur):
+                print(f"[warn] music-loop [{ls}, {le}] valt buiten de track "
+                      f"(0-{track_dur:.1f}s) of start >= eind; automatisch gedetecteerd.")
+                ls = le = None
         if ls is None or le is None:
-            from music_loop import detect_loop
             ls, le = detect_loop(args.music, cfg.music_min_loop_seconds)
         total = get_video_duration(combined_path)
         workdir = tempfile.mkdtemp(prefix="rhe_music_")
