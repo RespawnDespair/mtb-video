@@ -1154,3 +1154,34 @@ def test_load_gpx_name_none_when_absent(tmp_path):
     from highlight_detector import load_gpx
     p = tmp_path / "p.gpx"; p.write_text(SYNTHETIC_GPX)   # existing fixture, no <name>
     assert load_gpx(str(p)).name is None
+
+
+from intro_select import heading_change_per_sec, curviest_window
+
+
+def test_heading_change_straight_vs_turn():
+    # straight north-ish line -> ~0 turning; then a sharp east turn -> a spike
+    straight = [(46.0 + i * 1e-3, 7.0) for i in range(5)]
+    turn = heading_change_per_sec(straight, [20.0] * 5)
+    assert max(turn) < 1.0
+    corner = [(46.0, 7.0), (46.001, 7.0), (46.002, 7.0), (46.002, 7.001), (46.002, 7.002)]
+    t2 = heading_change_per_sec(corner, [20.0] * 5)
+    assert max(t2) > 60.0                       # ~90° turn registers
+
+
+def test_heading_change_ignores_stationary_jitter():
+    jitter = [(46.0, 7.0), (46.0, 7.0001), (46.0001, 7.0), (46.0, 7.0)]  # spinning while slow
+    turn = heading_change_per_sec(jitter, [2.0, 2.0, 2.0, 2.0])          # speed <= 8
+    assert all(t == 0.0 for t in turn)
+
+
+def test_curviest_window_respects_offset():
+    turn = [0.0] * 20
+    turn[10] = turn[11] = turn[12] = 50.0       # curvy burst at activity 10-12
+    # offset 5, video covers activity 5..17 (duration 12), clip 3s
+    vt = curviest_window(turn, offset_seconds=5.0, video_duration=12.0, clip_len=3.0)
+    assert vt == 5.0                            # best activity start 10 -> video 10-5
+
+
+def test_curviest_window_no_fit_returns_zero():
+    assert curviest_window([0.0] * 5, offset_seconds=0.0, video_duration=2.0, clip_len=7.0) == 0.0
