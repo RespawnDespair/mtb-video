@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import highlight_detector
 from highlight_detector import (get_video_duration, get_video_resolution)
