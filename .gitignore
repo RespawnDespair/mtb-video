@@ -9,3 +9,7 @@ venv/
 *.aac
 !tests/**/*.mp4
 .DS_Store
+
+# input data + preview artifacts (not source)
+*.gpx
+*.png

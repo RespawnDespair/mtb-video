@@ -1362,3 +1362,36 @@ def test_gpx_from_strava_speed_falls_back_to_distance(monkeypatch):
     monkeypatch.setattr(strava_client, "get_activity_streams", lambda aid: s)
     g = strava_gpx.gpx_from_strava("42")
     assert all(v is not None for v in g.speeds_kmh)   # derived from distance
+
+
+def test_resolve_gpx_source_gpx_wins(monkeypatch):
+    import main
+    called = {}
+    monkeypatch.setattr(main, "load_gpx", lambda p: (called.setdefault("gpx", p), "GPXOBJ")[1])
+    import strava_client
+    monkeypatch.setattr(strava_client, "is_configured", lambda: (_ for _ in ()).throw(AssertionError("strava must not be consulted")))
+
+    class A:
+        gpx = "ride.gpx"; strava_activity_id = "42"
+    assert main.resolve_gpx_source(A()) == "GPXOBJ"
+    assert called["gpx"] == "ride.gpx"
+
+
+def test_resolve_gpx_source_uses_strava(monkeypatch):
+    import main, strava_client, strava_gpx
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    monkeypatch.setattr(strava_gpx, "gpx_from_strava", lambda aid: f"FROM_STRAVA:{aid}")
+
+    class A:
+        gpx = None; strava_activity_id = "42"
+    assert main.resolve_gpx_source(A()) == "FROM_STRAVA:42"
+
+
+def test_resolve_gpx_source_neither_errors(monkeypatch):
+    import main, strava_client, pytest
+    monkeypatch.setattr(strava_client, "is_configured", lambda: False)
+
+    class A:
+        gpx = None; strava_activity_id = None
+    with pytest.raises(SystemExit):
+        main.resolve_gpx_source(A())

@@ -41,6 +41,12 @@ python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
 Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
 Deeper tuning lives in `config.py`.
 
+#### Building the track from Strava
+
+`--gpx` is optional: with `--strava --strava-activity-id <id>` the ride track is
+built automatically from the Strava activity (its GPS/altitude/HR streams), so you can
+render from Strava alone. A supplied `--gpx` always takes priority.
+
 ### Highlight modes
 
 By default (`--mode auto`) the tool uses your **Strava segments** as highlights when

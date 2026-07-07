@@ -42,6 +42,18 @@ def resolve_offset_args(args):
     return (override, bool(getattr(args, "auto_sync", False)))
 
 
+def resolve_gpx_source(args):
+    """Pick the GPX source: --gpx wins; else build from Strava; else error."""
+    if args.gpx:
+        return load_gpx(args.gpx)
+    import strava_client
+    if getattr(args, "strava_activity_id", None) and strava_client.is_configured():
+        import strava_gpx
+        print(f"GPX: opgebouwd uit Strava-activity {args.strava_activity_id}", file=sys.stderr)
+        return strava_gpx.gpx_from_strava(args.strava_activity_id)
+    raise SystemExit("Geef --gpx of --strava-activity-id (met Strava geconfigureerd).")
+
+
 def _mmss(seconds) -> str:
     """Format a video time in seconds as M:SS (e.g. 250.0 -> '4:10')."""
     total = int(round(seconds))
@@ -75,7 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate an MTB highlight video from action-cam footage + GPX telemetry."
     )
     p.add_argument("--video", required=True, help="Path to the source video file.")
-    p.add_argument("--gpx", required=True, help="Path to the Strava/Garmin GPX export.")
+    p.add_argument("--gpx", help="Path to the Strava/Garmin GPX export. If omitted, "
+                                 "the track is built from --strava-activity-id.")
     p.add_argument("--music", help="Path to a royalty-free MP3/AAC music track.")
     p.add_argument("--output", default="highlight.mp4", help="Output video path.")
     p.add_argument("--output-height", default="1080",
@@ -202,7 +215,7 @@ def main() -> int:
     cfg = build_config_from_args(args)
     cfg.output_height = resolve_output_height(args.output_height, args.video)
 
-    gpx = load_gpx(args.gpx)
+    gpx = resolve_gpx_source(args)
     offset_override, use_auto = resolve_offset_args(args)
 
     from highlight_detector import resolve_sync_offset
