@@ -36,3 +36,6 @@ class Config:
     hud_enabled: bool = True
     hud_fps: int = 15
     speedo_max_kmh: float = 45.0
+
+    # Output resolution
+    output_height: int = 1080   # final video height; width follows source aspect

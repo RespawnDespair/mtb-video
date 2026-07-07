@@ -219,6 +219,12 @@ def get_video_duration(path: str) -> float:
     return float(info.get("format", {}).get("duration", 0.0))
 
 
+def get_video_resolution(path: str) -> tuple[int, int]:
+    info = _ffprobe_json(path)
+    vs = next(s for s in info.get("streams", []) if s.get("codec_type") == "video")
+    return int(vs["width"]), int(vs["height"])
+
+
 @dataclass
 class Segment:
     start: float

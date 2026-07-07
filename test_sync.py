@@ -1036,3 +1036,24 @@ def test_telemetry_speed_falls_back_to_velocity_without_distance():
     streams = {"time": {"data": [0, 1, 2]}, "velocity_smooth": {"data": [5.0, 5.0, 5.0]}}
     ts = telemetry_from_streams(streams, g)
     assert all(abs(s - 18.0) < 1e-6 for s in ts.speeds_kmh)
+
+
+def test_get_video_resolution(monkeypatch):
+    import highlight_detector
+    monkeypatch.setattr(highlight_detector, "_ffprobe_json",
+                        lambda path: {"streams": [{"codec_type": "audio"},
+                                                  {"codec_type": "video", "width": 3840, "height": 2160}]})
+    assert highlight_detector.get_video_resolution("x.mp4") == (3840, 2160)
+
+
+def test_resolve_output_height_source(monkeypatch):
+    import main, highlight_detector
+    monkeypatch.setattr(highlight_detector, "get_video_resolution", lambda p: (3840, 2160))
+    assert main.resolve_output_height("source", "x.mp4") == 2160
+    assert main.resolve_output_height("SOURCE", "x.mp4") == 2160
+
+
+def test_resolve_output_height_int():
+    import main
+    assert main.resolve_output_height("2160", "x.mp4") == 2160
+    assert main.resolve_output_height("1080", "x.mp4") == 1080

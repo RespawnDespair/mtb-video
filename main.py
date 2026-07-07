@@ -78,6 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gpx", required=True, help="Path to the Strava/Garmin GPX export.")
     p.add_argument("--music", help="Path to a royalty-free MP3/AAC music track.")
     p.add_argument("--output", default="highlight.mp4", help="Output video path.")
+    p.add_argument("--output-height", default="1080",
+                   help="Output video height in pixels (default 1080), or 'source' to "
+                        "match the input. Width follows the source aspect. e.g. 2160 for 4K.")
     p.add_argument("--dry-run", action="store_true",
                    help="Print detected segments and scores; render nothing.")
     p.add_argument("--cut-mode", choices=["reencode", "copy"], default="reencode")
@@ -108,6 +111,14 @@ def build_config_from_args(args) -> Config:
     if args.score_cutoff is not None:
         cfg.score_cutoff = args.score_cutoff
     return cfg
+
+
+def resolve_output_height(value, video_path) -> int:
+    """Resolve --output-height: 'source' -> the source video height; else int."""
+    if isinstance(value, str) and value.strip().lower() == "source":
+        from highlight_detector import get_video_resolution
+        return get_video_resolution(video_path)[1]
+    return int(value)
 
 
 def print_segments(segments, scores) -> None:
@@ -186,6 +197,7 @@ def main() -> int:
     args = build_parser().parse_args()
     check_ffmpeg()
     cfg = build_config_from_args(args)
+    cfg.output_height = resolve_output_height(args.output_height, args.video)
 
     gpx = load_gpx(args.gpx)
     offset_override, use_auto = resolve_offset_args(args)
