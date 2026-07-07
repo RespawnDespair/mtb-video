@@ -274,7 +274,7 @@ def main() -> int:
                                   telemetry_source=telemetry_source)
         try:
             print("Intro + eindmontage renderen…", file=sys.stderr)
-            build_final_video(reel, gpx, cfg, args.output, args)
+            build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)
         finally:
             import os, shutil
             shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
@@ -296,7 +296,7 @@ def main() -> int:
     reel = build_highlight_reel(args.video, segments, args.music, cfg)
     try:
         print("Intro + eindmontage renderen…", file=sys.stderr)
-        build_final_video(reel, gpx, cfg, args.output, args)
+        build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)
     finally:
         import os, shutil
         shutil.rmtree(os.path.dirname(reel), ignore_errors=True)

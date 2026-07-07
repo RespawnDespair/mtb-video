@@ -1226,3 +1226,41 @@ def test_render_intro_frame_regions():
     assert A.getpixel((5, 5)) > 0                                   # full-frame scrim
     assert img.crop((60, 90, 700, 240)).getchannel("A").getextrema()[1] > 0   # title
     assert img.crop((0, 900, 1920, 1080)).getchannel("A").getextrema()[1] > 0 # stat row
+
+
+import shutil as _sh5
+
+
+@pytest.mark.skipif(_sh5.which("ffmpeg") is None or _sh5.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_build_intro_clip_with_bg(tmp_path):
+    import subprocess, intro_generator
+    g = _named_gpx("Namiddagrit")   # helper defined earlier in this file
+    vid = tmp_path / "src.mp4"      # 10s so a 7s window fits
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:d=10",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(vid)],
+                   check=True, capture_output=True)
+    from config import Config
+    cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 10
+    out = tmp_path / "intro.mp4"
+    intro_generator.build_intro_clip(g, cfg, str(out), extra_stats=None, size=(1280, 720),
+                                     video_path=str(vid), offset_seconds=0.0, gpx_path="x.gpx")
+    import os
+    assert out.exists() and os.path.getsize(out) > 0
+    h = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=height", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True).stdout.strip()
+    assert h == "720"
+
+
+@pytest.mark.skipif(_sh5.which("ffmpeg") is None,
+                    reason="ffmpeg not installed")
+def test_build_intro_clip_solid_fallback_when_no_video(tmp_path):
+    import intro_generator, os
+    from config import Config
+    g = _named_gpx("Namiddagrit")
+    cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 10
+    out = tmp_path / "intro.mp4"
+    intro_generator.build_intro_clip(g, cfg, str(out), extra_stats=None, size=(640, 360),
+                                     video_path=None, offset_seconds=0.0)
+    assert out.exists() and os.path.getsize(out) > 0

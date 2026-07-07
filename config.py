@@ -25,6 +25,8 @@ class Config:
 
     # Stage 3 — intro
     intro_duration: float = 7.0         # seconds
+    intro_fps: int = 30
+    intro_scrim_opacity: float = 0.55
 
     # Segment overlay (lower-third)
     overlay_font_path: str = "/System/Library/Fonts/Supplemental/Arial.ttf"

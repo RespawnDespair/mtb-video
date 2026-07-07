@@ -52,35 +52,61 @@ def reverse_geocode(lat: float, lon: float) -> str:
     return f"{lat:.4f}, {lon:.4f}"
 
 
-def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str,
-                     extra_stats: dict | None = None, size=(1920, 1080)) -> str:
-    """Render a stats intro clip with MoviePy at the given size."""
-    from moviepy.editor import TextClip, ColorClip, CompositeVideoClip
-
-    location = reverse_geocode(*gpx.first_coord)
-    date_str = gpx.start_time.strftime("%d %B %Y")
-    lines = [
-        location,
-        date_str,
-        f"{gpx.total_distance_km:.1f} km   +{gpx.elevation_gain_m:.0f} m",
-        f"Moving time {format_moving_time(gpx.moving_time_s)}",
-    ]
-    if extra_stats:
-        if extra_stats.get("avg_hr"):
-            lines.append(f"Avg HR {extra_stats['avg_hr']} bpm")
-        if extra_stats.get("avg_power"):
-            lines.append(f"Avg Power {extra_stats['avg_power']} W")
+def build_intro_clip(gpx: GpxData, cfg: Config, out_path: str, extra_stats: dict | None = None,
+                     size=(1920, 1080), video_path=None, offset_seconds=0.0, gpx_path=None) -> str:
+    """Render the animated intro: curviest bg clip (dimmed) + route-draw overlay."""
+    import intro_renderer
+    from intro_select import heading_change_per_sec, curviest_window
+    from highlight_detector import get_video_duration
+    from video_editor import _run_ffmpeg_progress
 
     W, H = size
-    fontsize = max(12, int(round(70 * H / 1080)))
-    bg = ColorClip(size=(W, H), color=(15, 15, 20)).set_duration(cfg.intro_duration)
-    text = "\n".join(lines)
-    txt = (TextClip(text, fontsize=fontsize, color="white", font="Arial", method="label")
-           .set_duration(cfg.intro_duration)
-           .set_position("center"))
-    clip = CompositeVideoClip([bg, txt]).set_duration(cfg.intro_duration)
-    clip.write_videofile(out_path, fps=30, codec="libx264", audio=False, logger=None)
-    return out_path
+    workdir = tempfile.mkdtemp(prefix="rhe_intro_")
+    try:
+        # 1. overlay PNG sequence
+        title = intro_renderer.intro_title(gpx, gpx_path)
+        date_str = intro_renderer.intro_date(gpx)
+        stats = intro_renderer.intro_stats(gpx, extra_stats)
+        frames_dir = os.path.join(workdir, "frames")
+        os.makedirs(frames_dir)
+        nframes = max(1, int(round(cfg.intro_duration * cfg.intro_fps)))
+        for i in range(nframes):
+            tn = i / (nframes - 1) if nframes > 1 else 1.0
+            frame = intro_renderer.render_intro_frame(tn, gpx.coords, title, date_str, stats, (W, H), cfg)
+            frame.save(os.path.join(frames_dir, f"f_{i:05d}.png"))
+        pattern = os.path.join(frames_dir, "f_%05d.png")
+
+        # 2. background: curviest clip from the video, else solid dark
+        bg_clip = None
+        if video_path:
+            try:
+                turn = heading_change_per_sec(gpx.coords, gpx.speeds_kmh)
+                vt = curviest_window(turn, offset_seconds, get_video_duration(video_path),
+                                     cfg.intro_duration)
+                bg_clip = os.path.join(workdir, "bg.mp4")
+                subprocess.run(
+                    ["ffmpeg", "-y", "-ss", str(vt), "-t", str(cfg.intro_duration),
+                     "-i", video_path, "-vf", f"scale={W}:{H}", "-an", bg_clip],
+                    check=True, capture_output=True)
+            except Exception as e:
+                print(f"[warn] intro background clip unavailable ({e}); using solid background.")
+                bg_clip = None
+
+        # 3. composite the overlay onto the background
+        if bg_clip:
+            base = ["-i", bg_clip]
+        else:
+            base = ["-f", "lavfi", "-i",
+                    f"color=c=0x0f1014:s={W}x{H}:r={cfg.intro_fps}:d={cfg.intro_duration}"]
+        cmd = (["ffmpeg", "-y"] + base
+               + ["-framerate", str(cfg.intro_fps), "-i", pattern,
+                  "-filter_complex", "[0:v][1:v]overlay=0:0:shortest=1[v]",
+                  "-map", "[v]", "-t", str(cfg.intro_duration),
+                  "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", out_path])
+        _run_ffmpeg_progress(cmd, cfg.intro_duration, "Intro renderen")
+        return out_path
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 def _gather_extra_stats(gpx: GpxData, args) -> dict:
@@ -119,7 +145,8 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
     return output
 
 
-def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args) -> str:
+def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, args,
+                      offset_seconds: float = 0.0) -> str:
     """Prepend the intro to the reel and re-encode at the configured resolution."""
     from highlight_detector import get_video_resolution
     sw, sh = get_video_resolution(args.video)
@@ -128,7 +155,9 @@ def build_final_video(reel_path: str, gpx: GpxData, cfg: Config, output: str, ar
     try:
         intro = os.path.join(workdir, "intro.mp4")
         extra = _gather_extra_stats(gpx, args)
-        build_intro_clip(gpx, cfg, intro, extra, size=(W, H))
+        build_intro_clip(gpx, cfg, intro, extra, size=(W, H),
+                         video_path=args.video, offset_seconds=offset_seconds,
+                         gpx_path=getattr(args, "gpx", None))
         return _concat_intro_and_reel(intro, reel_path, cfg.intro_duration, output, W, H)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

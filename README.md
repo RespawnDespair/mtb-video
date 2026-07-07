@@ -77,6 +77,13 @@ Output resolution defaults to 1080p. Render at the source resolution (e.g. 4K) w
 follows the source aspect and the HUD scales with it. The two heavy encodes
 (per-clip overlay and final assembly) show a live percentage.
 
+### Intro
+
+The intro is an animated title card: the curviest clip of the ride plays dimmed
+behind a route map that draws itself in, with the route name, date, and stats
+(distance, time, avg speed, elevation, and power when available). It renders at the
+configured output resolution and its background clip follows the sync offset.
+
 ### Fixing sync (copied videos with wrong timestamps)
 
 If the video's `creation_time` was altered by copying, the GPX↔video alignment is
