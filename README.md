@@ -1,14 +1,37 @@
-# ride-highlight-editor
+# 🚵 ride-highlight-editor
 
-Automatically generate highlight videos from mountainbike action-cam footage,
-using GPS/telemetry from a Strava or Garmin **GPX export** synced to the video
-timeline via the video's creation timestamp. Camera-agnostic (Insta360, GoPro,
-phone, anything).
+Turn raw mountainbike action-cam footage into a polished highlight video —
+automatically. Drop in your clips and a Strava ride (or a GPX file), and the tool
+finds the good bits, overlays live telemetry, adds an intro and music, and renders
+a shareable reel. Point-and-click GUI or one CLI command. Camera-agnostic
+(Insta360, GoPro, phone — anything).
+
+## What it does
+
+- **Finds your highlights** — uses your **Strava segments** (medals / PRs / starred)
+  as highlights, or falls back to automatic **speed & motion** detection.
+- **Live telemetry HUD** on every clip — segment name, heart rate, elevation + slope,
+  a speedometer, and a mini-map with a moving position dot, drawn from per-second
+  GPS/Strava data (adds power when available).
+- **Cinematic intro** — an animated title card: the curviest clip of the ride plays
+  behind a route map that draws itself in, with distance, time, avg speed, elevation.
+- **Adaptive background music** — point at a folder of tracks; they play back-to-back
+  with short crossfades, loop to fill the whole video, and fade out at the end.
+- **Multiple clips, one ride** — hand it several video files that jointly cover the
+  ride; each is placed on the timeline by its own recording time and only the parts
+  you actually filmed get rendered.
+- **Visual alignment GUI** — drag the sync-offset and watch, per segment, the **start
+  frame** and the **GPS track** update live so you can line footage up to the ride.
+- **Sensible defaults** — clips in `video_input/`, renders to `video_output/`, and
+  output files auto-named `<activity>_<date>.mp4`.
+
+![Ride Highlight Editor — aligning clips to the ride, with live frame + GPS previews](docs/gui.png)
 
 ## Requirements
 
-- macOS with Python 3.11–3.14
-- FFmpeg via Homebrew:
+- macOS (primary target; the CLI/GUI are cross-platform where FFmpeg + Python run)
+- Python 3.11–3.14
+- FFmpeg:
 
   ```bash
   brew install ffmpeg
@@ -22,128 +45,140 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> Python 3.14 is new; if `opencv-python`/`moviepy` wheels are unavailable for
-> your interpreter, use Python 3.11 or 3.12 in the venv.
+> Python 3.14 is new; if `opencv-python`/`moviepy` wheels aren't available for your
+> interpreter yet, use Python 3.11 or 3.12 in the venv.
 
-## Usage
+## Quick start
+
+### The GUI (easiest)
 
 ```bash
-# Put clips in video_input/ (or pass --video), render to video_output/:
-python main.py --gpx ride.gpx --strava --strava-activity-id 1234567890 --mode segments
+python gui.py
+```
 
-# Explicit inputs + a folder, custom output name/dir:
+This starts a local server on `127.0.0.1` and opens the **Ride Highlight Editor** in
+your browser. It's a friendly front end over the same pipeline as the CLI — it builds
+the equivalent `main.py` command for you and streams the render live:
+
+1. **Source videos** — pick a folder or add individual files (native file dialog).
+2. **Strava activity** — pick a recent ride; or, if Strava isn't set up, choose a GPX file.
+3. **Align to the track** — drag the shared sync-offset (or hit **Auto-align**) and watch,
+   per segment, the start frame and GPS track update against the ride's speed profile.
+4. **Music** — pick a music folder; sub-folders with tracks appear as chips.
+5. **Output & render** — set folder/filename, mode, resolution, choose which segments to
+   include, and hit **Start render**. The exact command and its live output show at the
+   bottom; **Stop** cancels a run.
+
+### The CLI
+
+```bash
+# Put clips in video_input/, render to video_output/ using your Strava segments:
+python main.py --strava --strava-activity-id 1234567890 --mode segments
+
+# Explicit files + music + a custom name, rendered at source (4K) resolution:
 python main.py --video clip1.mp4 clip2.mp4 --gpx ride.gpx \
-    --output myrun.mp4 --output-dir renders/
+    --music ./music/rock --output-height source --output myrun.mp4
+
+# Just see what it would do — print the detected segments, render nothing:
+python main.py --strava --strava-activity-id 1234567890 --mode segments --dry-run
 ```
 
 Without `--output` the file is named `<activity>_<YYYY-MM-DD>.mp4` in `--output-dir`
 (default `video_output/`). `--video` defaults to `video_input/` and also accepts a folder.
 
-Pass `--music ./music/` (a folder) or `--music track.mp3` (a single file). The tool plays
-the audio files back-to-back with short crossfades — folder contents sorted by filename
-(`.mp3/.m4a/.aac/.wav`) — repeating the list to fill the whole video, and fades out at the
-end. Mixed under the entire video (intro included), with the original audio quiet beneath.
+## Graceful by default
 
-The `music/` folder ships a few sample tracks generated with MusicAPI (user-owned, no
-attribution required — see [`music/CREDITS.md`](music/CREDITS.md)).
+The pipeline is built to keep going and tell you what it did, rather than fail hard:
 
-### Multiple video files
+- **No Strava?** Pass `--gpx ride.gpx` (a Strava or Garmin export). A supplied `--gpx`
+  always wins; with `--strava-activity-id` and Strava configured, the track is built
+  straight from the activity's GPS/altitude/HR streams — no GPX file needed.
+- **Wrong/missing video timestamp?** Sync falls back `creation_time` → filename
+  (`VID_YYYYMMDD_HHMMSS`) → file mtime, and warns when it's approximate. Fix it with
+  `--inspect` + `--auto-sync`, or set `--sync-offset` by hand (the GUI makes this visual).
+- **A picked segment has no footage?** It's dropped with a `geen video voor: …` warning;
+  the rest still renders. With several clips, only ride portions you actually filmed render.
+- **HUD render hiccups?** The clip falls back to a simple lower-third caption.
+- **Music can't be built/mixed?** The video renders without music (with a warning).
+- **Clips of different resolutions?** Each is scaled to the target output height.
+- **Strava/Garmin stats not configured?** They're skipped; the pipeline continues with
+  GPX-only stats.
 
-`--video` accepts several files that jointly cover one ride:
-`--video clip1.mp4 clip2.mp4 clip3.mp4`. Files are placed on the ride by their recording
-time, and their relative spacing (same camera) is trusted. `--sync-offset` **anchors the
-earliest-recorded file** at that offset — the same absolute meaning it has for a single
-file — and the other files follow by their recording-time deltas, so one value corrects a
-constant camera-clock skew across all of them. The segment/highlight selection runs on
-the ride as usual; only ride portions that actually have footage are rendered (uncovered
-segments are dropped with a warning), and `--pick` numbers just the covered segments. One
-`--video` file behaves exactly as before.
+## Highlight modes
 
-Tunable flags: `--min-speed`, `--score-cutoff`, `--cut-mode`.
-Deeper tuning lives in `config.py`.
-
-#### Building the track from Strava
-
-`--gpx` is optional: with `--strava --strava-activity-id <id>` the ride track is
-built automatically from the Strava activity (its GPS/altitude/HR streams), so you can
-render from Strava alone. A supplied `--gpx` always takes priority.
-
-### Highlight modes
-
-By default (`--mode auto`) the tool uses your **Strava segments** as highlights when
-available, otherwise it falls back to speed/motion detection.
+`--mode auto` (default) uses Strava segments when available, else speed/motion detection.
 
 ```bash
-# Segment mode: one clip per noteworthy segment (medal/PR/starred) with a
-# lower-third summary (name · time · speed · power · HR). Needs Strava + activity id:
-python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 \
-    --strava --strava-activity-id 1234567890 --mode segments
+# Segment mode: one clip per noteworthy segment (medal/PR/starred), with a telemetry
+# HUD. Needs Strava configured + an activity id:
+python main.py --gpx ride.gpx --strava --strava-activity-id 1234567890 --mode segments
 
-# Force the classic speed/motion mode:
-python main.py --video ride.mp4 --gpx ride.gpx --mode flow
+# Classic speed/motion mode:
+python main.py --gpx ride.gpx --mode flow
 ```
 
-Segment timing uses the same sync offset as the rest of the pipeline
-(`--inspect` / `--auto-sync` / `--sync-offset`). The filename timestamp
-(`VID_YYYYMMDD_HHMMSS`) is used as a sync source when `creation_time` metadata is
-missing.
+In segment mode each clip carries the animated **HUD**; disable it with
+`hud_enabled = False` in `config.py` for a plain lower-third caption. When Strava is
+configured, the HUD is fed by Strava's per-second **streams** (smoothed speed, HR,
+power, grade) — more accurate, and it adds a power readout; missing streams fall back
+to the GPX data per field.
 
-In segment mode each clip carries an animated telemetry **HUD** (segment name + heart
-rate, elevation + slope, a speedometer, and a segment minimap with a live position
-dot), drawn from the GPX per-second data. Disable it with `hud_enabled = False` in
-`config.py` to fall back to a simple lower-third caption. HUD frames render at
-`hud_fps` (default 15) and the speedometer scales to `speedo_max_kmh` (default 45).
+Output is 1080p by default. Render at source resolution (e.g. 4K) with
+`--output-height source`, or a specific height like `--output-height 1440`; width
+follows the source aspect and the HUD scales with it. The heavy encodes show a live %.
 
-When Strava is configured and an activity id is given, the HUD is fed by Strava's
-per-second **streams** (smoothed speed, heart rate, power, grade) rather than
-values computed from the GPX — more accurate, and it adds a power (W) readout.
-Missing streams fall back to the GPX data per field.
+## Multiple video files
 
-Output resolution defaults to 1080p. Render at the source resolution (e.g. 4K) with
-`--output-height source` (or a specific height like `--output-height 1440`); width
-follows the source aspect and the HUD scales with it. The two heavy encodes
-(per-clip overlay and final assembly) show a live percentage.
+`--video clip1.mp4 clip2.mp4 clip3.mp4` (or a folder) covers one ride with several files.
+Each is placed on the ride by its recording time, and their relative spacing (same
+camera) is trusted. `--sync-offset` **anchors the earliest-recorded file** — the same
+absolute meaning it has for a single file — and the others follow by their recording-time
+deltas, so one value corrects a constant camera-clock skew. Only ride portions with
+footage are rendered (uncovered segments are dropped with a warning); `--pick 1,3,4`
+selects segments by the numbers shown in `--dry-run` / the GUI. One `--video` file behaves
+exactly as before.
 
-### Intro
+## Music
 
-The intro is an animated title card: the curviest clip of the ride plays dimmed
-behind a route map that draws itself in, with the route name, date, and stats
-(distance, time, avg speed, elevation, and power when available). It renders at the
-configured output resolution and its background clip follows the sync offset.
+`--music ./music/` (a folder) or `--music track.mp3` (a single file). Folder contents are
+sorted by filename (`.mp3/.m4a/.aac/.wav`), played back-to-back with short crossfades,
+looped to fill the whole video, and faded out at the end — mixed under the entire video
+(intro included) with the original audio quiet beneath. Point `--music` at a specific
+sub-folder (e.g. `music/rock`) to pick a style. The bundled `music/` samples were
+generated with MusicAPI (user-owned, no attribution required — see
+[`music/CREDITS.md`](music/CREDITS.md)).
 
-### Fixing sync (copied videos with wrong timestamps)
+## Fixing sync (copied videos with wrong timestamps)
 
-If the video's `creation_time` was altered by copying, the GPX↔video alignment is
-off and too much footage is kept. Diagnose and correct it:
+If a video's `creation_time` was altered by copying, the GPX↔video alignment drifts and
+too much footage is kept:
 
 ```bash
-# 1. Inspect: see the offset sources and aligned speed/motion sparklines (video time).
+# See the offset sources + aligned speed/motion sparklines:
 python main.py --video ride.mp4 --gpx ride.gpx --inspect
 
-# 2a. Let cross-correlation pick the offset automatically for the render:
-python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --auto-sync
+# Let cross-correlation pick the offset:
+python main.py --video ride.mp4 --gpx ride.gpx --auto-sync
 
-# 2b. Or set the offset by hand (video_t maps to activity_t + offset):
-python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --sync-offset 137.5
+# Or set it by hand (video_t → activity_t + offset):
+python main.py --video ride.mp4 --gpx ride.gpx --sync-offset 137.5
 ```
 
-`--inspect` shows the metadata offset, the auto-aligned offset with its correlation
-(confidence), and which one is selected. Precedence: `--sync-offset` > `--auto-sync`
-> file timestamp. A low correlation warning means auto-align is uncertain — compare
-the `speed` and `motion` sparklines (peaks should line up) and set `--sync-offset`.
+Precedence: `--sync-offset` > `--auto-sync` > file timestamp. The GUI's alignment view is
+the visual version of this — drag until the start frames match where you expect to be.
 
-## Optional: Strava stats
+## Optional: Strava
 
-1. Create an API app at https://www.strava.com/settings/api. Fill in:
+Strava unlocks the activity picker, segment highlights, and the richer streams-based HUD.
+
+1. Create an API app at <https://www.strava.com/settings/api>:
    - **Website:** anything (e.g. `http://localhost`)
-   - **Authorization Callback Domain:** `localhost` (just the domain — no
-     `http://`, no port, no path)
+   - **Authorization Callback Domain:** `localhost` (just the domain — no `http://`, no port)
 
    Note the **Client ID** and **Client Secret**.
 
-2. Export the credentials and run the one-time OAuth helper. It opens your
-   browser, catches the redirect on `localhost`, and writes
-   `.strava_token.json` for you:
+2. Export the credentials and run the one-time OAuth helper (it opens your browser,
+   catches the redirect, and writes `.strava_token.json`):
 
    ```bash
    export STRAVA_CLIENT_ID=xxxxx
@@ -151,40 +186,9 @@ the `speed` and `motion` sparklines (peaks should line up) and set `--sync-offse
    python strava_auth.py            # or: python strava_auth.py --port 8721
    ```
 
-3. Run the pipeline with `--strava`:
-
-   ```bash
-   python main.py --video ride.mp4 --gpx ride.gpx --strava
-   ```
-
-Tokens refresh automatically after that. `.strava_token.json` is gitignored.
-
-Strava enrichment is optional and skipped gracefully if unconfigured; API
-failures log a warning and the pipeline continues with GPX-only stats.
-
-## GUI
-
-```bash
-python gui.py
-```
-
-This starts a local FastAPI server (127.0.0.1) and opens the Ride Highlight
-Editor in your browser. It's a point-and-click front end over the same
-pipeline as the CLI — the app assembles the equivalent `main.py` command for
-you and streams its output live:
-
-1. **Bronvideo's** — pick a folder or add individual video files.
-2. **Strava-activiteit** — pick a recent ride, or, if Strava isn't
-   configured (see above), pick a GPX file instead.
-3. **Uitlijnen op de track** — drag the shared sync-offset (or click
-   "Auto-uitlijnen") while watching live start-frame previews per segment
-   update against the speed/motion profile.
-4. **Muziek** — pick a music folder; subfolders with tracks show up as
-   selectable chips.
-5. **Output & render** — set the output folder/filename, mode and
-   resolution, pick which segments to include, then **Start render**. The
-   real command and its live output appear at the bottom; **Stop** cancels
-   an in-progress render.
+3. Run with `--strava` (tokens refresh automatically after that; `.strava_token.json` is
+   gitignored). To use the activity picker in the GUI, launch it in the same shell where
+   the credentials are exported.
 
 ## Tests
 
@@ -195,8 +199,7 @@ python -m pytest test_sync.py -v
 ## Troubleshooting
 
 - **"ffmpeg not found"** → `brew install ffmpeg`.
-- **Intro/reel concat audio error** → some intros are silent; if the final
-  concat fails on the audio map, the intro can be given a silent track via
-  `anullsrc` (see `intro_generator.build_final_video`).
-- **Segments look off by a second or two** → the video's `creation_time` tag
-  may be missing (falls back to file mtime). Prefer footage with intact metadata.
+- **Segments look off by a second or two** → the video's `creation_time` may be missing
+  (falls back to file mtime); prefer footage with intact metadata, or set `--sync-offset`.
+- **GUI shows "Strava niet beschikbaar"** → Strava isn't configured in that shell; export
+  the credentials before `python gui.py`, or use the "Choose GPX file" option.

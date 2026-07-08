@@ -20,3 +20,5 @@ venv/
 # input data + preview artifacts (not source)
 *.gpx
 *.png
+# README screenshot (checked in)
+!docs/gui.png
