@@ -202,7 +202,20 @@ def timeline(activity_id: str = None, gpx: str = None, offset: float = 0.0, vide
               "base": offset + (m["own"] - c["ref"]),
               "start": offset + (m["own"] - c["ref"]),
               "end": offset + (m["own"] - c["ref"]) + m["dur"]} for m in c["clip_meta"]]
-    return {"duration": c["duration"], "speed": c["speed"], "segments": c["segments"], "clips": clips}
+    # Render parts — one per (segment × covering clip), via the SAME resolve_render_parts
+    # the CLI uses, so the previews match the render (a segment spanning two files → two
+    # parts). Computed per request since coverage moves with the offset.
+    import types
+    from clip_sources import resolve_render_parts
+    srcs = [types.SimpleNamespace(path=m["path"], base_offset=offset + (m["own"] - c["ref"]),
+                                  duration=m["dur"]) for m in c["clip_meta"]]
+    ranges = [(s["start"], s["end"], s["name"], {"n": s["n"]}) for s in c["segments"]]
+    rparts, _ = resolve_render_parts(srcs, ranges)
+    parts = [{"n": p.stats["n"], "name": p.name, "file": os.path.basename(p.source_path),
+              "path": p.source_path, "a0": p.base_offset + p.local_start,
+              "a1": p.base_offset + p.local_end, "local": p.local_start} for p in rparts]
+    return {"duration": c["duration"], "speed": c["speed"], "segments": c["segments"],
+            "clips": clips, "parts": parts}
 
 
 _frame_cache: dict = {}

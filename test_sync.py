@@ -1967,6 +1967,7 @@ def test_api_timeline_shape(monkeypatch):
     r = TestClient(srv.app).get("/api/timeline", params={"activity_id": "1", "offset": 0})
     j = r.json()
     assert j["duration"] == 600 and len(j["speed"]) > 0 and j["segments"] == []
+    assert j["parts"] == []   # no videos -> no render parts
 
 
 @pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")

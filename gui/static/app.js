@@ -233,44 +233,46 @@
   }
 
   function updateFrames() {
-    const { segments, clips, duration } = state.timeline;
-    if (!segments.length) { framesEl.innerHTML = ''; return; }
-    if (!framesEl.dataset.built || framesEl.dataset.built !== JSON.stringify(segments.map(s => s.n))) {
-      framesEl.innerHTML = segments.map((s, i) => `
-        <div class="frame" id="fr${i}">
-          <div class="thumb"><img class="tcimg" style="width:100%;height:100%;object-fit:cover;display:none"><span class="tc">–</span></div>
+    const { segments = [], parts = [] } = state.timeline || {};
+    if (!segments.length) { framesEl.innerHTML = ''; framesEl.dataset.built = ''; return; }
+    // One card per render PART (a segment spanning two files → two cards, with the gap
+    // between them), plus a 'geen beeld' card for segments no clip covers.
+    const coveredN = new Set(parts.map(p => p.n));
+    const cards = [
+      ...parts.map(p => ({ empty: false, n: p.n, name: p.name, file: p.file, path: p.path,
+                           local: p.local, a0: p.a0, a1: p.a1 })),
+      ...segments.filter(s => !coveredN.has(s.n)).map(s => ({ empty: true, n: s.n, name: s.name })),
+    ].sort((a, b) => (a.n - b.n) || ((a.local || 0) - (b.local || 0)));
+    // Rebuild the DOM only when the card STRUCTURE changes (kind/segment/file), not on
+    // every offset tick — image sources update in place below.
+    const sig = JSON.stringify(cards.map(c => [c.empty ? 'x' : c.file, c.n]));
+    if (framesEl.dataset.built !== sig) {
+      framesEl.innerHTML = cards.map((c, i) => `
+        <div class="frame${c.empty ? ' empty' : ''}" id="fr${i}">
+          <div class="thumb"><img class="tcimg" style="width:100%;height:100%;object-fit:cover;display:none"><span class="tc">${c.empty ? 'geen beeld' : '–'}</span></div>
           <div class="segmap"><img class="mapimg" alt="segment-track"></div>
-          <div class="cap"><b>${s.n} · ${s.name}</b><span class="file">—</span></div>
+          <div class="cap"><b>${c.n} · ${c.name}</b><span class="file">${c.empty ? 'geen beeld — clip dekt dit segment niet' : '—'}</span></div>
         </div>`).join('');
-      framesEl.dataset.built = JSON.stringify(segments.map(s => s.n));
+      framesEl.dataset.built = sig;
     }
     const trackParam = state.activity ? `activity_id=${state.activity.id}`
       : (state.gpx ? `gpx=${encodeURIComponent(state.gpx)}` : '');
-    segments.forEach((s, i) => {
+    cards.forEach((c, i) => {
+      if (c.empty) return;
       const wrap = el('fr' + i);
       if (!wrap) return;
       const tc = wrap.querySelector('.tc'), img = wrap.querySelector('.tcimg');
       const mapimg = wrap.querySelector('.mapimg'), file = wrap.querySelector('.file');
-      const cov = clips.filter(c => c.end > s.start && c.start < s.end).sort((a, b) => a.base - b.base)[0];
-      if (!cov) {
-        wrap.classList.add('empty'); tc.style.display = ''; tc.textContent = 'geen beeld';
-        img.style.display = 'none'; file.textContent = 'geen beeld — clip dekt dit segment niet';
-        return;
-      }
-      wrap.classList.remove('empty');
-      const local = Math.max(s.start, cov.start) - cov.base;
-      file.textContent = `${cov.file} @ ${mmss(local)}`;
-      const src = `/api/frame?video=${encodeURIComponent(cov.path)}&t=${local}&w=320`;
+      file.textContent = `${c.file} @ ${mmss(c.local)}`;
+      const src = `/api/frame?video=${encodeURIComponent(c.path)}&t=${c.local}&w=320`;
       if (img.dataset.src !== src) {
         img.dataset.src = src;
         img.onload = () => { img.style.display = ''; tc.style.display = 'none'; };
         img.onerror = () => { img.style.display = 'none'; tc.style.display = ''; tc.textContent = 'geen beeld'; };
         img.src = src;
       }
-      // segment GPS track over the covered activity window — matches the render's minimap,
-      // and shifts with the offset (the covered window moves with the clip).
-      const a0 = Math.round(Math.max(s.start, cov.start)), a1 = Math.round(Math.min(s.end, cov.end));
-      const msrc = `/api/segment-map?${trackParam}&a0=${a0}&a1=${a1}`;
+      // GPS track of this part's covered window — same coords/projection as the render.
+      const msrc = `/api/segment-map?${trackParam}&a0=${Math.round(c.a0)}&a1=${Math.round(c.a1)}`;
       if (trackParam && mapimg.dataset.src !== msrc) {
         mapimg.dataset.src = msrc;
         mapimg.src = msrc;
