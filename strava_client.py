@@ -23,8 +23,12 @@ def _load_token() -> dict:
 
 
 def _save_token(token: dict) -> None:
-    with open(TOKEN_FILE, "w") as f:
+    # Write atomically so a concurrent reader never sees a truncated/half-written file
+    # (the GUI can fire several Strava calls at once).
+    tmp = f"{TOKEN_FILE}.tmp"
+    with open(tmp, "w") as f:
         json.dump(token, f)
+    os.replace(tmp, TOKEN_FILE)
 
 
 def _refresh_if_needed(token: dict, now_epoch: float) -> dict:

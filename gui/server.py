@@ -116,33 +116,53 @@ def _gpx_for(activity_id, gpx):
     return load_gpx(gpx) if gpx else strava_gpx.gpx_from_strava(activity_id)
 
 
+_timeline_cache: dict = {}
+
+
 @app.get("/api/timeline")
 def timeline(activity_id: str = None, gpx: str = None, offset: float = 0.0, videos: str = ""):
-    from config import Config
-    g = _gpx_for(activity_id, gpx)
-    cfg = Config()
-    speeds = list(g.speeds_kmh or [])
-    dur = len(speeds)
-    n = min(300, dur) or 0
-    prof = [max(speeds[i * dur // n: max(i * dur // n + 1, (i + 1) * dur // n)]) for i in range(n)] if n else []
-    segs = []
-    if activity_id:
-        try:
-            import strava_client
-            from segment_detector import parse_efforts, efforts_to_activity_ranges
-            efforts = parse_efforts(strava_client.get_segment_efforts(activity_id))
-            for i, (a0, a1, name, _st) in enumerate(efforts_to_activity_ranges(efforts, g.start_time, cfg), 1):
-                segs.append({"n": i, "name": name, "start": a0, "end": a1})
-        except Exception:
-            pass
-    clips = []
-    vids = [v for v in videos.split("|") if v]
-    if vids:
-        from clip_sources import build_clip_sources
-        for s in build_clip_sources(vids, g, cfg, offset_override=offset):
-            clips.append({"file": os.path.basename(s.path), "path": s.path, "base": s.base_offset,
-                          "start": s.base_offset, "end": s.base_offset + s.duration})
-    return {"duration": dur, "speed": prof, "segments": segs, "clips": clips}
+    # Only `offset` changes while dragging; the track, profile, segments, and each
+    # video's own recording offset don't. Build those once per (source, videos) and
+    # cache them, so a slider drag does no Strava/ffprobe work (and can't race on the
+    # token file) — clip positions are then a pure arithmetic shift by the offset.
+    key = (activity_id or "", gpx or "", videos)
+    if key not in _timeline_cache:
+        from config import Config
+        from segment_detector import parse_efforts, efforts_to_activity_ranges
+        g = _gpx_for(activity_id, gpx)
+        cfg = Config()
+        speeds = list(g.speeds_kmh or [])
+        dur = len(speeds)
+        n = min(300, dur)
+        prof = [max(speeds[i * dur // n: max(i * dur // n + 1, (i + 1) * dur // n)])
+                for i in range(n)] if n else []
+        segs = []
+        if activity_id:
+            try:
+                import strava_client
+                efforts = parse_efforts(strava_client.get_segment_efforts(activity_id))
+                for i, (a0, a1, name, _st) in enumerate(
+                        efforts_to_activity_ranges(efforts, g.start_time, cfg), 1):
+                    segs.append({"n": i, "name": name, "start": a0, "end": a1})
+            except Exception:
+                pass
+        clip_meta, ref = [], 0.0
+        vids = [v for v in videos.split("|") if v]
+        if vids:
+            from clip_sources import build_clip_sources
+            bases = build_clip_sources(vids, g, cfg, offset_override=None)
+            ref = min((s.base_offset for s in bases), default=0.0)
+            clip_meta = [{"file": os.path.basename(s.path), "path": s.path,
+                          "own": s.base_offset, "dur": s.duration} for s in bases]
+        _timeline_cache[key] = {"duration": dur, "speed": prof, "segments": segs,
+                                "ref": ref, "clip_meta": clip_meta}
+    c = _timeline_cache[key]
+    # base_i = offset + (own_i - ref) — identical to build_clip_sources(offset_override=offset)
+    clips = [{"file": m["file"], "path": m["path"],
+              "base": offset + (m["own"] - c["ref"]),
+              "start": offset + (m["own"] - c["ref"]),
+              "end": offset + (m["own"] - c["ref"]) + m["dur"]} for m in c["clip_meta"]]
+    return {"duration": c["duration"], "speed": c["speed"], "segments": c["segments"], "clips": clips}
 
 
 _frame_cache: dict = {}

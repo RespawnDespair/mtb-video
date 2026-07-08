@@ -1994,3 +1994,38 @@ def test_api_render_streams_command_and_exit(tmp_path, monkeypatch):
         with c.stream("POST", "/api/render", json=cfg) as r:
             body = "".join(chunk for chunk in r.iter_text())
     assert body.startswith("$ ") and "main.py" in body and "[exit" in body
+
+
+def test_api_timeline_caches_across_offsets(monkeypatch):
+    """Dragging the offset must not refetch the track from Strava (cache hit)."""
+    from datetime import datetime, timezone
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    from highlight_detector import GpxData
+    calls = {"n": 0}
+    g = GpxData(start_time=datetime(2026, 7, 5, tzinfo=timezone.utc), speeds_kmh=[10.0] * 600,
+                coords=[(52.0, 4.0)] * 600, elevations_m=[5] * 600, hr_bpm=[100] * 600,
+                cum_distance_m=list(range(600)), total_distance_km=5.0, elevation_gain_m=20.0,
+                moving_time_s=600.0, first_coord=(52.0, 4.0), name="Rit")
+
+    def fake_gpx(i):
+        calls["n"] += 1
+        return g
+    monkeypatch.setattr("strava_gpx.gpx_from_strava", fake_gpx)
+    monkeypatch.setattr("strava_client.get_segment_efforts", lambda i: [])
+    srv._timeline_cache.clear()
+    c = TestClient(srv.app)
+    r1 = c.get("/api/timeline", params={"activity_id": "77", "offset": 100})
+    r2 = c.get("/api/timeline", params={"activity_id": "77", "offset": 500})
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert calls["n"] == 1                       # track built once, reused across offsets
+    assert r1.json()["duration"] == 600 and r2.json()["duration"] == 600
+
+
+def test_save_token_atomic(tmp_path, monkeypatch):
+    import strava_client, json
+    tok = tmp_path / ".strava_token.json"
+    monkeypatch.setattr(strava_client, "TOKEN_FILE", str(tok))
+    strava_client._save_token({"access_token": "x", "expires_at": 1})
+    assert json.loads(tok.read_text())["access_token"] == "x"
+    assert not (tmp_path / ".strava_token.json.tmp").exists()   # temp cleaned via os.replace
