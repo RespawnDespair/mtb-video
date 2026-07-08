@@ -239,14 +239,18 @@
       framesEl.innerHTML = segments.map((s, i) => `
         <div class="frame" id="fr${i}">
           <div class="thumb"><img class="tcimg" style="width:100%;height:100%;object-fit:cover;display:none"><span class="tc">–</span></div>
-          <div class="cap"><b>${s.name}</b><span class="file">—</span></div>
+          <div class="segmap"><img class="mapimg" alt="segment-track"></div>
+          <div class="cap"><b>${s.n} · ${s.name}</b><span class="file">—</span></div>
         </div>`).join('');
       framesEl.dataset.built = JSON.stringify(segments.map(s => s.n));
     }
+    const trackParam = state.activity ? `activity_id=${state.activity.id}`
+      : (state.gpx ? `gpx=${encodeURIComponent(state.gpx)}` : '');
     segments.forEach((s, i) => {
       const wrap = el('fr' + i);
       if (!wrap) return;
-      const tc = wrap.querySelector('.tc'), img = wrap.querySelector('.tcimg'), file = wrap.querySelector('.file');
+      const tc = wrap.querySelector('.tc'), img = wrap.querySelector('.tcimg');
+      const mapimg = wrap.querySelector('.mapimg'), file = wrap.querySelector('.file');
       const cov = clips.filter(c => c.end > s.start && c.start < s.end).sort((a, b) => a.base - b.base)[0];
       if (!cov) {
         wrap.classList.add('empty'); tc.style.display = ''; tc.textContent = 'geen beeld';
@@ -262,6 +266,14 @@
         img.onload = () => { img.style.display = ''; tc.style.display = 'none'; };
         img.onerror = () => { img.style.display = 'none'; tc.style.display = ''; tc.textContent = 'geen beeld'; };
         img.src = src;
+      }
+      // segment GPS track over the covered activity window — matches the render's minimap,
+      // and shifts with the offset (the covered window moves with the clip).
+      const a0 = Math.round(Math.max(s.start, cov.start)), a1 = Math.round(Math.min(s.end, cov.end));
+      const msrc = `/api/segment-map?${trackParam}&a0=${a0}&a1=${a1}`;
+      if (trackParam && mapimg.dataset.src !== msrc) {
+        mapimg.dataset.src = msrc;
+        mapimg.src = msrc;
       }
     });
   }

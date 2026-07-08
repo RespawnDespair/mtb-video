@@ -216,15 +216,26 @@
   .frames-head .label { text-transform:none; font-size:12px; font-weight:600; color:var(--text-dim); letter-spacing:0; }
   .frames-head .live { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--track); }
   .frames-head .live .pip { width:7px; height:7px; border-radius:50%; background:var(--track); }
-  .frames { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
-  @media (max-width: 640px) { .frames { grid-template-columns:1fr; } }
-  .frame { border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--surface-2); }
-  .frame .thumb { aspect-ratio:16/9; position:relative; }
+  .frames { display:flex; flex-direction:column; gap:10px; }
+  .frame { display:flex; align-items:stretch; border:1px solid var(--border); border-radius:9px;
+    overflow:hidden; background:var(--surface-2); }
+  .frame .thumb { position:relative; width:min(44vw,340px); aspect-ratio:16/9; flex:none; }
+  .frame .segmap { width:min(34vw,260px); flex:none; border-left:1px solid var(--border);
+    background:color-mix(in srgb, var(--track) 7%, var(--surface));
+    display:flex; align-items:center; justify-content:center; }
+  .frame .segmap img { width:100%; height:100%; object-fit:contain; display:block; }
+  .frame.empty .segmap { display:none; }
+  @media (max-width: 720px) {
+    .frame { flex-direction:column; }
+    .frame .thumb, .frame .segmap { width:100%; }
+    .frame .segmap { border-left:none; border-top:1px solid var(--border); aspect-ratio:2/1; }
+  }
   .frame .thumb .tc {
     position:absolute; bottom:6px; right:6px; font-family:var(--font-mono); font-size:10.5px;
     background:rgba(0,0,0,.6); color:#fff; padding:2px 6px; border-radius:4px; font-variant-numeric:tabular-nums;
   }
-  .frame .cap { padding:8px 10px; display:flex; flex-direction:column; gap:2px; }
+  .frame .cap { padding:10px 12px; display:flex; flex-direction:column; gap:3px;
+    justify-content:center; flex:1; min-width:0; }
   .frame .cap b { font-weight:600; font-size:12.5px; }
   .frame .cap .file { font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
   .frame.empty .thumb { display:flex; align-items:center; justify-content:center; background:var(--surface-2);

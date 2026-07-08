@@ -110,10 +110,50 @@ def pick(body: dict):
     return {"path": paths[0]} if mode in ("folder", "gpx") else {"paths": paths}
 
 
+_gpx_cache: dict = {}
+
+
 def _gpx_for(activity_id, gpx):
     from highlight_detector import load_gpx
     import strava_gpx
     return load_gpx(gpx) if gpx else strava_gpx.gpx_from_strava(activity_id)
+
+
+def _gpx_cached(activity_id, gpx):
+    """Memoise the built GpxData per source so per-offset / per-segment requests don't
+    refetch from Strava."""
+    key = (activity_id or "", gpx or "")
+    if key not in _gpx_cache:
+        _gpx_cache[key] = _gpx_for(activity_id, gpx)
+    return _gpx_cache[key]
+
+
+@app.get("/api/segment-map")
+def segment_map(activity_id: str = None, gpx: str = None, a0: float = 0.0, a1: float = 0.0,
+                w: int = 360, h: int = 200):
+    """Render the GPS track of a segment's covered activity-time window [a0, a1] — the same
+    coords/projection the HUD minimap uses — as a transparent PNG."""
+    import io
+    from PIL import Image, ImageDraw
+    from minimap import compute_bounds, project
+    g = _gpx_cached(activity_id, gpx)
+    coords = g.coords or []
+    lo = int(max(0, min(a0, a1)))
+    hi = int(min(len(coords) - 1, max(a0, a1)))
+    seg = coords[lo:hi + 1] if coords else []
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    if len(seg) >= 2:
+        pad = 16
+        bounds = compute_bounds(seg)
+        pts = [project(la, lo2, bounds, w, h, pad) for la, lo2 in seg]
+        d.line(pts, fill=(62, 142, 82, 255), width=3, joint="curve")
+        sx, sy = pts[0]; ex, ey = pts[-1]
+        d.ellipse([ex - 4, ey - 4, ex + 4, ey + 4], fill=(62, 142, 82, 255))     # end
+        d.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], fill=(210, 92, 36, 255))     # start (accent)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return Response(buf.getvalue(), media_type="image/png")
 
 
 _timeline_cache: dict = {}
@@ -129,7 +169,7 @@ def timeline(activity_id: str = None, gpx: str = None, offset: float = 0.0, vide
     if key not in _timeline_cache:
         from config import Config
         from segment_detector import parse_efforts, efforts_to_activity_ranges
-        g = _gpx_for(activity_id, gpx)
+        g = _gpx_cached(activity_id, gpx)
         cfg = Config()
         speeds = list(g.speeds_kmh or [])
         dur = len(speeds)

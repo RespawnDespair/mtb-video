@@ -2029,3 +2029,20 @@ def test_save_token_atomic(tmp_path, monkeypatch):
     strava_client._save_token({"access_token": "x", "expires_at": 1})
     assert json.loads(tok.read_text())["access_token"] == "x"
     assert not (tmp_path / ".strava_token.json.tmp").exists()   # temp cleaned via os.replace
+
+
+def test_api_segment_map_returns_png(monkeypatch):
+    from datetime import datetime, timezone
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    from highlight_detector import GpxData
+    coords = [(52.0 + i * 1e-4, 4.0 + i * 1.5e-4) for i in range(400)]
+    g = GpxData(start_time=datetime(2026, 7, 5, tzinfo=timezone.utc), speeds_kmh=[10.0] * 400,
+                coords=coords, elevations_m=[5] * 400, hr_bpm=[100] * 400,
+                cum_distance_m=list(range(400)), total_distance_km=5.0, elevation_gain_m=20.0,
+                moving_time_s=400.0, first_coord=coords[0], name="Rit")
+    monkeypatch.setattr("strava_gpx.gpx_from_strava", lambda i: g)
+    srv._gpx_cache.clear()
+    r = TestClient(srv.app).get("/api/segment-map", params={"activity_id": "88", "a0": 50, "a1": 200})
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"     # PNG signature
