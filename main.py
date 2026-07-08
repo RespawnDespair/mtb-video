@@ -324,41 +324,38 @@ def _run_multi(args, cfg, gpx, offset_override, use_auto, output_path) -> int:
             return 1
 
     if ranges:  # segment mode
-        # Resolve coverage per segment so a segment that splits across files stays one
-        # pick-numbered unit, and duplicate segment names can't be confused. Segments
-        # with no footage are reported separately and are not numbered.
-        covered = []   # (a0, a1, name, parts) in ride order, only segments with video
-        no_video = []
-        for rng in ranges:
-            p, _ = resolve_render_parts(sources, [rng])
-            (covered.append((rng[0], rng[1], rng[2], p)) if p else no_video.append(rng[2]))
-        if no_video:
-            print(f"[warn] geen video voor: {', '.join(no_video)}", file=sys.stderr)
-        if not covered:
-            print("Geen van de segmenten wordt door video gedekt; niets te renderen.",
+        # Number ALL noteworthy segments in ride order — the SAME numbering the GUI shows
+        # (from /api/timeline) — so --pick means the same thing in both, and the numbering
+        # is stable (independent of the offset / which segments happen to have footage).
+        numbered = list(enumerate(ranges, 1))  # (n, (a0, a1, name, stats))
+        picks = parse_pick(getattr(args, "pick", None), len(numbered))
+        chosen = [(n, r) for n, r in numbered if picks is None or n in picks]
+
+        parts, dropped = resolve_render_parts(sources, [r for _, r in chosen])
+        if dropped:
+            print(f"[warn] geen video voor: {', '.join(dropped)}", file=sys.stderr)
+
+        if args.dry_run:
+            print(f"Segment-highlights ({len(numbered)}):")
+            for n, (a0, a1, name, _st) in numbered:
+                if picks is not None and n not in picks:
+                    mark = "   (overgeslagen)"
+                elif name in dropped:
+                    mark = "   (geen video)"
+                else:
+                    mark = ""
+                print(f"  {n}. {_mmss(a0):>6} -> {_mmss(a1):>6}  {name}{mark}")
+            return 0
+
+        if not parts:
+            print("Geen van de gekozen segmenten wordt door video gedekt; niets te renderen.",
                   file=sys.stderr)
             return 1
 
-        picks = parse_pick(getattr(args, "pick", None), len(covered))
-        numbered = list(enumerate(covered, 1))  # (number, segment) in chronological order
-
-        if args.dry_run:
-            print(f"Segment-highlights ({len(covered)}):")
-            for n, (a0, a1, name, p) in numbered:
-                mark = "" if picks is None or n in picks else "   (overgeslagen)"
-                srcs = ", ".join(sorted({os.path.basename(pp.source_path) for pp in p}))
-                print(f"  {n}. {_mmss(a0):>6} -> {_mmss(a1):>6}  {name}  [{srcs}]{mark}")
-            return 0
-
-        if picks is not None:
-            numbered = [(n, seg) for n, seg in numbered if n in picks]
-            if not numbered:
-                print("--pick matched no segments; nothing to render.", file=sys.stderr)
-                return 1
-        print(f"Rendering {len(numbered)} segment(en):", file=sys.stderr)
-        for n, (a0, a1, name, _p) in numbered:
+        rendered = [(n, r) for n, r in chosen if r[2] not in dropped]  # covered picks
+        print(f"Rendering {len(rendered)} segment(en):", file=sys.stderr)
+        for n, (a0, a1, name, _st) in rendered:
             print(f"  {n}. {_mmss(a0):>6} -> {_mmss(a1):>6}  {name}", file=sys.stderr)
-        parts = [pp for _, (_a0, _a1, _name, p) in numbered for pp in p]
         parts.sort(key=lambda pp: pp.base_offset + pp.local_start)
         telemetry_source = _telemetry_source_multi(args, gpx)
         reel = build_reel_from_parts(parts, cfg, (W, H), gpx=gpx,
