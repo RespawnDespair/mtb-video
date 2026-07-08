@@ -1,0 +1,167 @@
+<title>Ride Highlight Editor — GUI mock</title>
+<link rel="stylesheet" href="/static/app.css">
+
+<div class="wrap">
+  <div class="win">
+    <div class="titlebar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="title"><b>Ride Highlight Editor</b> — nieuwe render</div>
+      <div class="spacer"></div>
+      <div class="badge-mock">Mockup</div>
+    </div>
+
+    <div class="body">
+      <p class="lede">Kies je bronvideo's en Strava-rit, <b>lijn de clips uit op de track</b>, kies muziek en output — en start. De GUI stelt onderaan exact het <b>commandline-commando</b> samen dat wordt uitgevoerd.</p>
+
+      <!-- 1. INPUT -->
+      <section>
+        <div class="sec-head"><span class="sec-num">01</span><h2>Bronvideo's</h2><span class="hint">map of losse bestanden · niet-recursief</span></div>
+        <div class="card">
+          <div class="row">
+            <button class="btn"><svg class="i" viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H3z"/></svg>Kies map…</button>
+            <button class="btn ghost"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Bestanden toevoegen…</button>
+            <span class="dir" style="margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--text-faint)">video_input/</span>
+          </div>
+          <div class="filelist">
+            <div class="file"><svg class="i ico" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM10 9l5 3-5 3z"/></svg><span class="fn">VID_20260705_144402_00_003.mp4</span><span class="meta">2:31 · 4K</span></div>
+            <div class="file"><svg class="i ico" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM10 9l5 3-5 3z"/></svg><span class="fn">VID_20260705_145222_00_004.mp4</span><span class="meta">21:40 · 4K</span></div>
+          </div>
+          <div class="dropzone">…of sleep videobestanden hierheen</div>
+        </div>
+      </section>
+
+      <!-- 2. STRAVA -->
+      <section>
+        <div class="sec-head"><span class="sec-num">02</span><h2>Strava-activiteit</h2><span class="hint">recente ritten</span></div>
+        <div class="card">
+          <div class="row" style="margin-bottom:12px">
+            <input class="field grow" value="zoek activiteit…" aria-label="zoek activiteit" style="color:var(--text-faint)">
+            <button class="btn ghost"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 8 8"/><path d="M4 12v4h4"/></svg>Verversen</button>
+          </div>
+          <div class="acts" id="acts">
+            <div class="act" role="checkbox" aria-checked="true" tabindex="0" data-id="19189561939" data-name="Stellendam Goeree Vol Gas" data-date="2026-07-05">
+              <span class="dot"></span>
+              <div><div class="name">Stellendam Goeree Vol Gas</div><div class="sub">za 5 jul 2026 · 14:44 · MTB</div></div>
+              <div class="stats"><b>21.3 km</b><span>1:12:04 · +186 m</span></div>
+            </div>
+            <div class="act" role="checkbox" aria-checked="false" tabindex="0" data-id="19154002881" data-name="Avondrit Bos" data-date="2026-07-03">
+              <span class="dot"></span>
+              <div><div class="name">Avondrit Bos</div><div class="sub">do 3 jul 2026 · 19:12 · MTB</div></div>
+              <div class="stats"><b>14.8 km</b><span>0:52:10 · +94 m</span></div>
+            </div>
+            <div class="act" role="checkbox" aria-checked="false" tabindex="0" data-id="19098773410" data-name="Duinen techniek" data-date="2026-06-30">
+              <span class="dot"></span>
+              <div><div class="name">Duinen techniek</div><div class="sub">ma 30 jun 2026 · 17:40 · MTB</div></div>
+              <div class="stats"><b>9.2 km</b><span>0:41:33 · +120 m</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. ALIGNMENT -->
+      <section>
+        <div class="sec-head"><span class="sec-num">03</span><h2>Uitlijnen op de track</h2><span class="hint">verschuif de clips tot de bewegingspieken op de snelheidspieken vallen</span></div>
+        <div class="card align">
+          <div class="tl-head">
+            <div class="offset-ctl">
+              <span class="label" style="text-transform:none;font-size:12px;color:var(--text-dim);font-weight:600">Sync-offset</span>
+              <input type="range" id="off" min="0" max="1200" value="577" step="1" aria-label="sync offset seconden">
+              <span class="num"><span id="offv">577</span> s</span>
+            </div>
+            <button class="btn ghost" id="autobtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m14.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2"/></svg>Auto-uitlijnen</button>
+            <span class="corr"><span class="pip"></span>correlatie <b>0.86</b> · goed</span>
+          </div>
+
+          <div class="timeline">
+            <div class="tl-chart" id="chart">
+              <div class="seg" style="left:4.7%;width:26.7%"><span>Hobbelen langs de Damweg</span></div>
+              <div class="seg" style="left:38.7%;width:5.7%"><span>Roggebos</span></div>
+              <div class="seg" style="left:47.7%;width:4.6%"><span>Havenhoofd</span></div>
+              <svg id="spark" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+            <div class="clips-lane" id="lane">
+              <div class="clip" id="clipA" title="VID_…003.mp4"><span class="grip">⠿</span><span class="cn">003.mp4</span></div>
+              <div class="clip" id="clipB" title="VID_…004.mp4"><span class="grip">⠿</span><span class="cn">004.mp4</span></div>
+            </div>
+            <div class="ticks"><span>0:00</span><span>18:00</span><span>36:00</span><span>54:00</span><span>1:12</span></div>
+          </div>
+
+          <p class="tl-note">De offset geldt gedeeld voor alle clips (zelfde camera). Bestand A is verankerd; B volgt via zijn opnametijd. <b>Groen</b> = snelheid/beweging uit de rit; <b>oranje</b> = jouw videoclips.</p>
+
+          <div class="frames-head">
+            <span class="label">Startframe per segment</span>
+            <span class="live"><span class="pip"></span>loopt mee met de offset</span>
+          </div>
+          <div class="frames" id="frames"></div>
+        </div>
+      </section>
+
+      <!-- 4. MUSIC -->
+      <section>
+        <div class="sec-head"><span class="sec-num">04</span><h2>Muziek</h2><span class="hint">map met tracks · crossfade · fade-out</span></div>
+        <div class="card">
+          <div class="row">
+            <button class="btn"><svg class="i" viewBox="0 0 24 24"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>Kies muziekmap…</button>
+            <div class="chips" style="margin-left:6px">
+              <span class="chip" aria-pressed="true">music/rock <span style="opacity:.7">· 4</span></span>
+              <span class="chip" aria-pressed="false">music/bass <span style="opacity:.7">· 3</span></span>
+              <span class="chip" aria-pressed="false">geen muziek</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. OUTPUT -->
+      <section>
+        <div class="sec-head"><span class="sec-num">05</span><h2>Output &amp; render</h2></div>
+        <div class="card">
+          <div class="grid2">
+            <div class="stack">
+              <span class="label">Outputmap</span>
+              <div class="out-name"><span class="dir">video_output/</span><button class="btn ghost" style="padding:6px 10px">Wijzig…</button></div>
+            </div>
+            <div class="stack">
+              <span class="label">Bestandsnaam <span style="text-transform:none;color:var(--text-faint);font-weight:400">— leeg = automatisch</span></span>
+              <input class="field" id="outname" placeholder="Stellendam_Goeree_Vol_Gas_2026-07-05.mp4">
+            </div>
+            <div class="stack">
+              <span class="label">Modus</span>
+              <div class="chips">
+                <span class="chip" aria-pressed="true">segmenten</span>
+                <span class="chip" aria-pressed="false">flow</span>
+                <span class="chip" aria-pressed="false">auto</span>
+              </div>
+            </div>
+            <div class="stack">
+              <span class="label">Resolutie</span>
+              <div class="chips">
+                <span class="chip" aria-pressed="false">1080p</span>
+                <span class="chip" aria-pressed="true">bron (4K)</span>
+              </div>
+            </div>
+          </div>
+          <div class="stack" style="margin-top:14px">
+            <span class="label">Segmenten (uit dry-run) · klik om te kiezen</span>
+            <div class="chips">
+              <span class="chip" aria-pressed="true">1 · Hobbelen langs de Damweg</span>
+              <span class="chip" aria-pressed="false">2 · Jean-Jacques volgas</span>
+              <span class="chip" aria-pressed="true">3 · MTB Goeree Roggebos</span>
+              <span class="chip" aria-pressed="true">4 · MTB lusje kort Havenhoofd</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="cmd" id="cmd"></div>
+      <div class="actions">
+        <span class="muted">Dit commando draait in de terminal — de voortgang verschijnt hier.</span>
+        <button class="start"><svg class="i" viewBox="0 0 24 24" style="stroke-width:2"><path d="M7 5l12 7-12 7z"/></svg>Start render</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>

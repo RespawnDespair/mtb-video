@@ -105,3 +105,24 @@ def get_activity_streams(activity_id: str) -> dict:
                         params={"keys": _STREAM_KEYS, "key_by_type": True}, timeout=30)
     resp.raise_for_status()
     return resp.json() or {}
+
+
+def list_activities(n: int = 15) -> list:
+    """Recent activities as summary dicts for the GUI picker."""
+    if not is_configured():
+        raise RuntimeError("Strava not configured (.strava_token.json + env vars).")
+    token = _refresh_if_needed(_load_token(), now_epoch=time.time())
+    _save_token(token)
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    acts = requests.get(f"{_API}/athlete/activities", headers=headers,
+                        params={"per_page": n}, timeout=30).json()
+    out = []
+    for a in acts or []:
+        out.append({
+            "id": a.get("id"), "name": a.get("name") or "Activity",
+            "start_date": a.get("start_date"), "type": a.get("type"),
+            "distance_km": round((a.get("distance") or 0) / 1000, 1),
+            "moving_time_s": a.get("moving_time") or 0,
+            "elevation_gain_m": round(a.get("total_elevation_gain") or 0),
+        })
+    return out

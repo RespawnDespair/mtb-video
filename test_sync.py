@@ -1880,3 +1880,39 @@ def test_run_multi_accepts_output_path(monkeypatch):
     """_run_multi takes an explicit output_path param (signature wiring)."""
     import main, inspect
     assert "output_path" in inspect.signature(main._run_multi).parameters
+
+
+def test_list_activities_normalises(monkeypatch):
+    import strava_client
+    monkeypatch.setattr(strava_client, "is_configured", lambda: True)
+    monkeypatch.setattr(strava_client, "_load_token", lambda: {"access_token": "x", "expires_at": 9e9})
+    monkeypatch.setattr(strava_client, "_refresh_if_needed", lambda t, now_epoch: t)
+    monkeypatch.setattr(strava_client, "_save_token", lambda t: None)
+    class R:
+        def json(self): return [{"id": 42, "name": "Rit", "start_date": "2026-07-05T12:00:00Z",
+                                 "distance": 21300, "moving_time": 4324, "total_elevation_gain": 186,
+                                 "type": "Ride"}]
+    monkeypatch.setattr(strava_client.requests, "get", lambda *a, **k: R())
+    acts = strava_client.list_activities(5)
+    assert acts[0]["id"] == 42 and acts[0]["name"] == "Rit"
+    assert acts[0]["distance_km"] == 21.3 and acts[0]["moving_time_s"] == 4324
+
+
+def test_gui_serves_index_and_activities(monkeypatch):
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    monkeypatch.setattr("strava_client.list_activities", lambda n=15: [{"id": 1, "name": "A"}])
+    c = TestClient(srv.app)
+    assert c.get("/").status_code == 200 and "Ride Highlight Editor" in c.get("/").text
+    r = c.get("/api/activities")
+    assert r.status_code == 200 and r.json()[0]["name"] == "A"
+
+
+def test_gui_activities_503_when_unconfigured(monkeypatch):
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    def boom(n=15):
+        raise RuntimeError("Strava not configured")
+    monkeypatch.setattr("strava_client.list_activities", boom)
+    r = TestClient(srv.app).get("/api/activities")
+    assert r.status_code == 503 and "Strava" in r.json()["detail"]
