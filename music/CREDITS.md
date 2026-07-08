@@ -1,7 +1,7 @@
 # Music credits
 
-The background-music tracks in this folder (`01_bg_music.mp3`, `02_bg_music.mp3`,
-`03_bg_music.mp3`) were generated with **MusicAPI** (<https://musicapi.ai>).
+The background-music tracks in this folder and its subfolders (`bass/`, `rock/`, …) were
+generated with **MusicAPI** (<https://musicapi.ai>).
 
 Per MusicAPI's [Terms of Service](https://musicapi.ai/terms):
 
@@ -12,5 +12,6 @@ Per MusicAPI's [Terms of Service](https://musicapi.ai/terms):
 - **No attribution to MusicAPI is required.** This note is provided for provenance only,
   not as a mandated credit.
 
-These tracks are included here as sample/default background music for the highlight
-renderer; provide your own with `--music <folder-or-file>`.
+These tracks are sample/default background music for the highlight renderer. Playback is
+non-recursive, so point `--music` at a specific folder of tracks — e.g. `--music
+music/rock/` or `--music music/bass/` — or provide your own file/folder.

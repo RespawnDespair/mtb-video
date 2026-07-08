@@ -8,12 +8,13 @@ venv/
 *.mp3
 *.aac
 !tests/**/*.mp4
-# curated background-music tracks shipped with the repo (see music/CREDITS.md)
+# curated background-music tracks shipped with the repo (see music/CREDITS.md);
+# recursive so themed subfolders (music/bass/, music/rock/, …) are versioned too
 !music/
-!music/*.mp3
-!music/*.m4a
-!music/*.aac
-!music/*.wav
+!music/**/*.mp3
+!music/**/*.m4a
+!music/**/*.aac
+!music/**/*.wav
 .DS_Store
 
 # input data + preview artifacts (not source)
