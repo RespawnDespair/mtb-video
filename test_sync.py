@@ -1916,3 +1916,40 @@ def test_gui_activities_503_when_unconfigured(monkeypatch):
     monkeypatch.setattr("strava_client.list_activities", boom)
     r = TestClient(srv.app).get("/api/activities")
     assert r.status_code == 503 and "Strava" in r.json()["detail"]
+
+
+def test_build_render_argv_full():
+    import sys as _s
+    from gui.render import build_render_argv
+    argv = build_render_argv({
+        "videos": ["a.mp4", "b.mp4"], "strava_activity_id": "19189561939",
+        "sync_offset": 577, "mode": "segments", "pick": "1,3,4",
+        "music": "music/rock", "output_height": "source",
+        "output_dir": "video_output", "output": "rit.mp4"})
+    assert argv[:2] == [_s.executable, "main.py"]
+    assert "--video" in argv and "a.mp4" in argv and "b.mp4" in argv
+    assert argv[argv.index("--sync-offset") + 1] == "577"
+    assert "--strava" in argv and argv[argv.index("--strava-activity-id") + 1] == "19189561939"
+    assert argv[argv.index("--pick") + 1] == "1,3,4"
+    assert argv[argv.index("--output") + 1] == "rit.mp4"
+
+
+def test_build_render_argv_omits_absent():
+    from gui.render import build_render_argv
+    argv = build_render_argv({"gpx": "r.gpx", "mode": "flow", "output_dir": "video_output"})
+    assert "--gpx" in argv and "--strava" not in argv
+    assert "--music" not in argv and "--pick" not in argv and "--sync-offset" not in argv
+
+
+@pytest.mark.skipif(_sh6.which("ffprobe") is None, reason="ffprobe not installed")
+def test_api_videos_lists_clips(tmp_path):
+    import subprocess
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    for n in ["a.mp4", "b.mp4"]:
+        subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=1",
+                        str(tmp_path / n)], check=True, capture_output=True)
+    r = TestClient(srv.app).post("/api/videos", json={"dir": str(tmp_path)})
+    assert r.status_code == 200
+    got = r.json()
+    assert [v["name"] for v in got] == ["a.mp4", "b.mp4"] and got[0]["width"] == 320
