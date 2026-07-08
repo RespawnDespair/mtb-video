@@ -56,7 +56,13 @@
             <div class="offset-ctl">
               <span class="label" style="text-transform:none;font-size:12px;color:var(--text-dim);font-weight:600">Sync-offset</span>
               <input type="range" id="off" min="0" max="1200" value="0" step="1" aria-label="sync offset seconden">
-              <span class="num"><span id="offv">0</span> s</span>
+              <span class="num"><input type="number" id="offv" value="0" min="0" max="1200" step="1" aria-label="sync offset in seconden"> s</span>
+              <div class="nudge">
+                <button class="btn ghost" type="button" data-d="-10">−10</button>
+                <button class="btn ghost" type="button" data-d="-1">−1</button>
+                <button class="btn ghost" type="button" data-d="1">+1</button>
+                <button class="btn ghost" type="button" data-d="10">+10</button>
+              </div>
             </div>
             <button class="btn ghost" id="autobtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m14.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2"/></svg>Auto-uitlijnen</button>
             <span class="corr" id="corr" style="display:none"><span class="pip"></span>correlatie <b id="corrval">–</b> · <span id="corrlabel"></span></span>

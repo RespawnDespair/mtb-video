@@ -160,11 +160,21 @@
   /* ALIGNMENT — the hero panel */
   .align { border-color: var(--border-strong); }
   .tl-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
-  .offset-ctl { display: flex; align-items: center; gap: 10px; }
+  .offset-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .offset-ctl .num {
-    font-family: var(--font-mono); font-weight: 650; font-size: 15px;
-    font-variant-numeric: tabular-nums; min-width: 62px;
+    font-family: var(--font-mono); font-weight: 650; font-size: 14px;
+    font-variant-numeric: tabular-nums; color: var(--text-dim);
+    display: inline-flex; align-items: center; gap: 4px;
   }
+  .offset-ctl .num input {
+    font-family: var(--font-mono); font-weight: 650; font-size: 14px;
+    font-variant-numeric: tabular-nums; width: 62px; text-align: right;
+    color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border-strong); border-radius: 7px; padding: 5px 7px;
+  }
+  .offset-ctl .num input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .nudge { display: inline-flex; gap: 4px; }
+  .nudge .btn { padding: 5px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
   input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px;
     background: var(--border-strong); width: 220px; cursor: pointer; }
   input[type=range]::-webkit-slider-thumb {

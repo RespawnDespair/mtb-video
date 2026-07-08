@@ -303,12 +303,23 @@
   }
   const refreshTimeline = debounce(fetchTimeline, 150);
 
-  offEl.addEventListener('input', () => {
-    state.offset = +offEl.value;
-    offvEl.textContent = state.offset;
-    refreshTimeline();
+  function setOffset(v, doFetch) {
+    v = Math.max(+offEl.min, Math.min(+offEl.max, Math.round(v || 0)));
+    state.offset = v;
+    offEl.value = v;
+    offvEl.value = v;
     updateCommandPreview();
-  });
+    if (doFetch) fetchTimeline();
+  }
+  // Dragging the slider only updates the value live (cheap); the timeline/frames refresh
+  // on release (change) — no debounce, which feels snappier than mid-drag fetching.
+  offEl.addEventListener('input', () => setOffset(+offEl.value, false));
+  offEl.addEventListener('change', () => fetchTimeline());
+  // Editable value: sync while typing, fetch on commit (blur/Enter).
+  offvEl.addEventListener('input', () => setOffset(+offvEl.value, false));
+  offvEl.addEventListener('change', () => setOffset(+offvEl.value, true));
+  document.querySelectorAll('.nudge [data-d]').forEach(b =>
+    b.addEventListener('click', () => setOffset(state.offset + (+b.dataset.d), true)));
 
   el('autobtn').addEventListener('click', async () => {
     if (!state.videos.length) return;
@@ -321,15 +332,11 @@
       const r = await fetch('/api/auto-align', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (r.ok) {
         const j = await r.json();
-        state.offset = Math.round(j.offset);
-        offEl.value = Math.max(+offEl.min, Math.min(+offEl.max, state.offset));
-        offvEl.textContent = offEl.value;
         state.correlation = j.correlation;
         corrEl.style.display = '';
         corrvalEl.textContent = j.correlation.toFixed(2);
         corrlabelEl.textContent = j.correlation >= 0.7 ? 'goed' : (j.correlation >= 0.4 ? 'matig' : 'zwak');
-        refreshTimeline();
-        updateCommandPreview();
+        setOffset(j.offset, true);
       }
     } finally {
       btn.innerHTML = prevHtml; btn.disabled = false;
@@ -485,7 +492,7 @@
 
   // ---------- init ----------
   state.offset = +offEl.value;          // keep state in sync with the slider's initial value
-  offvEl.textContent = state.offset;
+  offvEl.value = state.offset;
   renderVideos();
   loadActivities();
   updateCommandPreview();
