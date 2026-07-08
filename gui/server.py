@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -106,6 +106,72 @@ def pick(body: dict):
     if not paths:
         return {"cancelled": True}
     return {"path": paths[0]} if mode in ("folder", "gpx") else {"paths": paths}
+
+
+def _gpx_for(activity_id, gpx):
+    from highlight_detector import load_gpx
+    import strava_gpx
+    return load_gpx(gpx) if gpx else strava_gpx.gpx_from_strava(activity_id)
+
+
+@app.get("/api/timeline")
+def timeline(activity_id: str = None, gpx: str = None, offset: float = 0.0, videos: str = ""):
+    from config import Config
+    g = _gpx_for(activity_id, gpx)
+    cfg = Config()
+    speeds = list(g.speeds_kmh or [])
+    dur = len(speeds)
+    n = min(300, dur) or 0
+    prof = [max(speeds[i * dur // n: max(i * dur // n + 1, (i + 1) * dur // n)]) for i in range(n)] if n else []
+    segs = []
+    if activity_id:
+        try:
+            import strava_client
+            from segment_detector import parse_efforts, efforts_to_activity_ranges
+            efforts = parse_efforts(strava_client.get_segment_efforts(activity_id))
+            for i, (a0, a1, name, _st) in enumerate(efforts_to_activity_ranges(efforts, g.start_time, cfg), 1):
+                segs.append({"n": i, "name": name, "start": a0, "end": a1})
+        except Exception:
+            pass
+    clips = []
+    vids = [v for v in videos.split("|") if v]
+    if vids:
+        from clip_sources import build_clip_sources
+        for s in build_clip_sources(vids, g, cfg, offset_override=offset):
+            clips.append({"file": os.path.basename(s.path), "path": s.path, "base": s.base_offset,
+                          "start": s.base_offset, "end": s.base_offset + s.duration})
+    return {"duration": dur, "speed": prof, "segments": segs, "clips": clips}
+
+
+_frame_cache: dict = {}
+
+
+@app.get("/api/frame")
+def frame(video: str, t: float, w: int = 320):
+    if not os.path.isfile(video):
+        raise HTTPException(404, "video niet gevonden")
+    key = (video, round(t), w)
+    if key not in _frame_cache:
+        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(max(0.0, t)), "-i", video,
+                            "-frames:v", "1", "-vf", f"scale={w}:-2", "-q:v", "4",
+                            "-f", "mjpeg", "pipe:1"], capture_output=True)
+        if r.returncode != 0 or not r.stdout:
+            raise HTTPException(404, "geen frame op deze tijd")
+        if len(_frame_cache) > 200:
+            _frame_cache.pop(next(iter(_frame_cache)))
+        _frame_cache[key] = r.stdout
+    return Response(_frame_cache[key], media_type="image/jpeg")
+
+
+@app.post("/api/auto-align")
+def auto_align(body: dict):
+    from config import Config
+    from highlight_detector import compute_optical_flow_per_second, estimate_offset_by_motion
+    g = _gpx_for(body.get("activity_id"), body.get("gpx"))
+    cfg = Config()
+    flow = compute_optical_flow_per_second(body["video"], cfg)
+    off, corr = estimate_offset_by_motion(flow, g, cfg)
+    return {"offset": off, "correlation": corr}
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

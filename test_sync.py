@@ -1953,3 +1953,32 @@ def test_api_videos_lists_clips(tmp_path):
     assert r.status_code == 200
     got = r.json()
     assert [v["name"] for v in got] == ["a.mp4", "b.mp4"] and got[0]["width"] == 320
+
+
+def test_api_timeline_shape(monkeypatch):
+    from datetime import datetime, timezone
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    from highlight_detector import GpxData
+    g = GpxData(start_time=datetime(2026, 7, 5, tzinfo=timezone.utc),
+                speeds_kmh=[10.0] * 600, coords=[(52.0, 4.0)] * 600, elevations_m=[5] * 600,
+                hr_bpm=[100] * 600, cum_distance_m=list(range(600)), total_distance_km=5.0,
+                elevation_gain_m=20.0, moving_time_s=600.0, first_coord=(52.0, 4.0), name="Rit")
+    monkeypatch.setattr("strava_gpx.gpx_from_strava", lambda i: g)
+    monkeypatch.setattr("strava_client.get_segment_efforts", lambda i: [])
+    r = TestClient(srv.app).get("/api/timeline", params={"activity_id": "1", "offset": 0})
+    j = r.json()
+    assert j["duration"] == 600 and len(j["speed"]) > 0 and j["segments"] == []
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_api_frame_returns_jpeg(tmp_path):
+    import subprocess
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    clip = tmp_path / "c.mp4"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:d=3",
+                    str(clip)], check=True, capture_output=True)
+    r = TestClient(srv.app).get("/api/frame", params={"video": str(clip), "t": 1.0, "w": 160})
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert r.content[:2] == b"\xff\xd8"  # JPEG SOI
