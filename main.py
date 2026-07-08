@@ -93,7 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="One or more source video files that jointly cover the ride.")
     p.add_argument("--gpx", help="Path to the Strava/Garmin GPX export. If omitted, "
                                  "the track is built from --strava-activity-id.")
-    p.add_argument("--music", help="Path to a royalty-free MP3/AAC music track.")
+    p.add_argument("--music", help="Path to an audio file or a folder of audio files "
+                                    "(.mp3/.m4a/.aac/.wav) to play under the video.")
     p.add_argument("--output", default="highlight.mp4", help="Output video path.")
     p.add_argument("--output-height", default="1080",
                    help="Output video height in pixels (default 1080), or 'source' to "
@@ -120,11 +121,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pick", default=None,
                    help="Comma-separated 1-based segment numbers to render (from the "
                         "--dry-run list), e.g. --pick 1,3. Default: all segments.")
-    p.add_argument("--music-loop-start", type=float, default=None,
-                   help="Manual music loop-in point (s); overrides auto-detection "
-                        "(use with --music-loop-end).")
-    p.add_argument("--music-loop-end", type=float, default=None,
-                   help="Manual music loop-out point (s); overrides auto-detection.")
     return p
 
 

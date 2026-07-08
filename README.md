@@ -38,10 +38,10 @@ python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --output highli
 python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
 ```
 
-Pass `--music track.mp3` and the tool builds an adaptive bed the exact length of the
-final video: it plays the track from the start, loops a seamless region (auto-detected,
-or set `--music-loop-start`/`--music-loop-end`) to fill the middle, then ends with the
-track's natural outro, mixed under the whole video (intro included).
+Pass `--music ./music/` (a folder) or `--music track.mp3` (a single file). The tool plays
+the audio files back-to-back with short crossfades — folder contents sorted by filename
+(`.mp3/.m4a/.aac/.wav`) — repeating the list to fill the whole video, and fades out at the
+end. Mixed under the entire video (intro included), with the original audio quiet beneath.
 
 ### Multiple video files
 

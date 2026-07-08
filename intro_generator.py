@@ -154,31 +154,17 @@ def _concat_intro_and_reel(intro_path: str, reel_path: str, intro_duration: floa
 
 
 def _apply_music(combined_path: str, output: str, args, cfg: Config) -> str:
-    """Build the adaptive music bed at the video's length and mix it under the audio.
+    """Build the playlist music bed at the video's length and mix it under the audio.
     On any failure, fall back to the un-scored video."""
     from highlight_detector import get_video_duration
     from video_editor import _run_ffmpeg_progress
     try:
-        import music_bed
-        from music_loop import detect_loop
-        ls, le = args.music_loop_start, args.music_loop_end
-        if ls is not None and le is None or ls is None and le is not None:
-            print("[warn] geef zowel --music-loop-start als --music-loop-end; "
-                  "loop wordt automatisch gedetecteerd.")
-            ls = le = None
-        if ls is not None and le is not None:
-            track_dur = get_video_duration(args.music)
-            if not (0.0 <= ls < le <= track_dur):
-                print(f"[warn] music-loop [{ls}, {le}] valt buiten de track "
-                      f"(0-{track_dur:.1f}s) of start >= eind; automatisch gedetecteerd.")
-                ls = le = None
-        if ls is None or le is None:
-            ls, le = detect_loop(args.music, cfg.music_min_loop_seconds)
+        import music_playlist
         total = get_video_duration(combined_path)
         workdir = tempfile.mkdtemp(prefix="rhe_music_")
         try:
-            bed = music_bed.build_music_bed(args.music, total, ls, le,
-                                            os.path.join(workdir, "bed.m4a"), cfg)
+            bed = music_playlist.build_music_bed(
+                args.music, total, os.path.join(workdir, "bed.m4a"), cfg)
             cmd = ["ffmpeg", "-y", "-i", combined_path, "-i", bed,
                    "-filter_complex",
                    f"[0:a]volume={cfg.original_audio_volume}[a0];"

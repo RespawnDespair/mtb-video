@@ -1433,72 +1433,6 @@ def test_resolve_gpx_source_strava_error_clean_exit(monkeypatch):
 import shutil as _sh6
 
 
-@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_decode_pcm_length(tmp_path):
-    import subprocess, music_loop
-    src = tmp_path / "t.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:d=2",
-                    str(src)], check=True, capture_output=True)
-    x = music_loop._decode_pcm(str(src), sr=22050)
-    assert x.dtype.name == "float32" and abs(len(x) - 2 * 22050) < 22050  # ~2s @ 22050
-
-
-@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_detect_loop_on_periodic_tone(tmp_path):
-    import subprocess, music_loop
-    # 40s steady sine -> highly self-similar; a >=8s seamless loop should be found
-    src = tmp_path / "tone.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=200:d=40",
-                    str(src)], check=True, capture_output=True)
-    ls, le = music_loop.detect_loop(str(src), min_loop_seconds=8.0)
-    assert le - ls >= 8.0 - 1e-6
-    assert 5.0 <= ls and le <= 40.0
-
-
-@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_detect_loop_short_track_fallback(tmp_path):
-    import subprocess, music_loop
-    src = tmp_path / "short.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=200:d=3",
-                    str(src)], check=True, capture_output=True)
-    ls, le = music_loop.detect_loop(str(src), min_loop_seconds=8.0)
-    assert ls == 0.0 and le > 0.0     # too short -> whole-track fallback
-
-
-@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
-                    reason="ffmpeg not installed")
-def test_build_music_bed_long_exact_duration(tmp_path):
-    import subprocess, music_bed
-    from config import Config
-    src = tmp_path / "m.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
-                    str(src)], check=True, capture_output=True)
-    out = tmp_path / "bed.m4a"
-    cfg = Config(); cfg.music_outro_seconds = 6.0; cfg.music_crossfade_seconds = 1.0
-    # loop [10,25], target 60 -> needs head+loop-fill+outro
-    music_bed.build_music_bed(str(src), 60.0, 10.0, 25.0, str(out), cfg)
-    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
-    assert abs(d - 60.0) < 0.3
-
-
-@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
-                    reason="ffmpeg not installed")
-def test_build_music_bed_short_linear(tmp_path):
-    import subprocess, music_bed
-    from config import Config
-    src = tmp_path / "m.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
-                    str(src)], check=True, capture_output=True)
-    out = tmp_path / "bed.m4a"
-    cfg = Config()
-    # target 8 < loop_end(25)+outro-xf -> linear branch
-    music_bed.build_music_bed(str(src), 8.0, 10.0, 25.0, str(out), cfg)
-    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
-    assert abs(d - 8.0) < 0.3
-
-
 @pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
                     reason="ffmpeg not installed")
 def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
@@ -1511,9 +1445,12 @@ def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
                     "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-pix_fmt",
                     "yuv420p", "-c:a", "aac", "-shortest", str(reel)],
                    check=True, capture_output=True)
-    music_path = tmp_path / "m.mp3"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
-                    str(music_path)], check=True, capture_output=True)
+    # build a small music folder instead of a single loop track
+    mdir = tmp_path / "music"; mdir.mkdir()
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=10",
+                    str(mdir / "01.mp3")], check=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=300:d=10",
+                    str(mdir / "02.mp3")], check=True, capture_output=True)
     monkeypatch.setattr(intro_generator, "reverse_geocode", lambda lat, lon: "T, NL")
     g = GpxData(start_time=datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc),
                 speeds_kmh=[10], coords=[(52.0, 4.0)], elevations_m=[5.0], hr_bpm=[100],
@@ -1521,8 +1458,7 @@ def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
                 moving_time_s=600.0, first_coord=(52.0, 4.0), name="Rit")
     cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 8
     class A:
-        video = str(reel); strava = False; garmin = False; music = str(music_path)
-        music_loop_start = 10.0; music_loop_end = 25.0
+        video = str(reel); strava = False; garmin = False; music = str(mdir)
     out = tmp_path / "final.mp4"
     intro_generator.build_final_video(str(reel), g, cfg, str(out), A())
     codec = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",
