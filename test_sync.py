@@ -1808,3 +1808,57 @@ def test_run_multi_pick_numbers_covered_and_marks_skipped(monkeypatch, capsys):
     assert "1. " in out.out and "Seg1" in out.out
     assert "2. " in out.out and "Seg3" in out.out             # Seg3 is #2 (uncovered not numbered)
     assert "(overgeslagen)" in out.out                        # Seg3 skipped by --pick 1
+
+
+def test_gather_tracks_dir_sorted_audio_only(tmp_path):
+    import music_playlist
+    for name in ["b.mp3", "a.mp3", "d.wav", "c.txt", "notes.md"]:
+        (tmp_path / name).write_bytes(b"x")
+    tracks = music_playlist.gather_tracks(str(tmp_path))
+    assert [__import__("os").path.basename(t) for t in tracks] == ["a.mp3", "b.mp3", "d.wav"]
+
+
+def test_gather_tracks_single_file(tmp_path):
+    import music_playlist
+    f = tmp_path / "song.mp3"; f.write_bytes(b"x")
+    assert music_playlist.gather_tracks(str(f)) == [str(f)]
+
+
+def test_gather_tracks_empty_dir_raises(tmp_path):
+    import music_playlist, pytest as _pt
+    (tmp_path / "readme.txt").write_bytes(b"x")
+    with _pt.raises(RuntimeError):
+        music_playlist.gather_tracks(str(tmp_path))
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_playlist_bed_repeats_to_fill(tmp_path):
+    import subprocess, music_playlist
+    from config import Config
+    d = tmp_path / "music"; d.mkdir()
+    for i, freq in enumerate([220, 330]):
+        subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency={freq}:d=3",
+                        str(d / f"{i}_t.mp3")], check=True, capture_output=True)
+    out = tmp_path / "bed.m4a"
+    cfg = Config(); cfg.music_crossfade_seconds = 1.0
+    # two 3s tracks (crossfaded ~5s) must repeat to fill 12s
+    music_playlist.build_music_bed(str(d), 12.0, str(out), cfg)
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
+    assert abs(dur - 12.0) < 0.3
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None or _sh6.which("ffprobe") is None,
+                    reason="ffmpeg not installed")
+def test_playlist_bed_single_track_trimmed(tmp_path):
+    import subprocess, music_playlist
+    from config import Config
+    f = tmp_path / "long.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=220:d=40",
+                    str(f)], check=True, capture_output=True)
+    out = tmp_path / "bed.m4a"
+    music_playlist.build_music_bed(str(f), 8.0, str(out), Config())
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
+    assert abs(dur - 8.0) < 0.3
