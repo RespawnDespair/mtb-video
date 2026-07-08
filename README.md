@@ -28,15 +28,16 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Dry run — print detected segments and scores, render nothing:
-python main.py --video ride.mp4 --gpx ride.gpx --dry-run
+# Put clips in video_input/ (or pass --video), render to video_output/:
+python main.py --gpx ride.gpx --strava --strava-activity-id 1234567890 --mode segments
 
-# Full render with music:
-python main.py --video ride.mp4 --gpx ride.gpx --music track.mp3 --output highlight.mp4
-
-# Frame-accurate (default) vs fast keyframe copy:
-python main.py --video ride.mp4 --gpx ride.gpx --cut-mode copy
+# Explicit inputs + a folder, custom output name/dir:
+python main.py --video clip1.mp4 clip2.mp4 --gpx ride.gpx \
+    --output myrun.mp4 --output-dir renders/
 ```
+
+Without `--output` the file is named `<activity>_<YYYY-MM-DD>.mp4` in `--output-dir`
+(default `video_output/`). `--video` defaults to `video_input/` and also accepts a folder.
 
 Pass `--music ./music/` (a folder) or `--music track.mp3` (a single file). The tool plays
 the audio files back-to-back with short crossfades — folder contents sorted by filename

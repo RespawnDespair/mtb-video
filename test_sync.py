@@ -1712,7 +1712,7 @@ def test_run_multi_dropped_ranges_error(monkeypatch, capsys):
                            strava_activity_id=None, output="out.mp4", output_height="1080",
                            music=None, gpx="r.gpx")
     from config import Config
-    rc = main._run_multi(args, Config(), object(), None, False)
+    rc = main._run_multi(args, Config(), object(), None, False, "out.mp4")
     assert rc == 1
     assert "niets te renderen" in capsys.readouterr().err
 
@@ -1736,7 +1736,7 @@ def test_run_multi_pick_numbers_covered_and_marks_skipped(monkeypatch, capsys):
     args = SimpleNamespace(video=["A.mp4","B.mp4"], mode="segments", dry_run=True,
                            pick="1", strava_activity_id=None, output="o.mp4",
                            output_height="1080", music=None, gpx=None)
-    rc = main._run_multi(args, Config(), object(), None, False)
+    rc = main._run_multi(args, Config(), object(), None, False, "o.mp4")
     out = capsys.readouterr()
     assert rc == 0
     assert "geen video voor: Geen video" in out.err          # uncovered reported separately
@@ -1881,3 +1881,9 @@ def test_parser_io_defaults():
     import main
     a = main.build_parser().parse_args(["--gpx", "r.gpx"])
     assert a.video is None and a.output is None and a.output_dir == "video_output"
+
+
+def test_run_multi_accepts_output_path(monkeypatch):
+    """_run_multi takes an explicit output_path param (signature wiring)."""
+    import main, inspect
+    assert "output_path" in inspect.signature(main._run_multi).parameters

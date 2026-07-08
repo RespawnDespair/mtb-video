@@ -304,7 +304,7 @@ def _telemetry_source_multi(args, gpx):
     return None
 
 
-def _run_multi(args, cfg, gpx, offset_override, use_auto) -> int:
+def _run_multi(args, cfg, gpx, offset_override, use_auto, output_path) -> int:
     """Multi-file orchestration: build clip sources, resolve ride-time ranges onto
     coverage, build the reel from RenderParts, then run intro + final assembly."""
     from clip_sources import build_clip_sources, resolve_render_parts, RenderPart
@@ -384,24 +384,26 @@ def _run_multi(args, cfg, gpx, offset_override, use_auto) -> int:
 
     try:
         print("Intro + eindmontage renderen…", file=sys.stderr)
-        build_final_video(reel, gpx, cfg, args.output, args, sources=sources)
+        build_final_video(reel, gpx, cfg, output_path, args, sources=sources)
     finally:
         shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
-    print(f"Wrote {args.output}")
+    print(f"Wrote {output_path}")
     return 0
 
 
 def main() -> int:
     args = build_parser().parse_args()
     check_ffmpeg()
+    args.video = resolve_video_inputs(args)
     cfg = build_config_from_args(args)
     cfg.output_height = resolve_output_height(args.output_height, args.video[0])
 
     gpx = resolve_gpx_source(args)
+    output_path = resolve_output_path(args, gpx)
     offset_override, use_auto = resolve_offset_args(args)
 
     if len(args.video) > 1:
-        return _run_multi(args, cfg, gpx, offset_override, use_auto)
+        return _run_multi(args, cfg, gpx, offset_override, use_auto, output_path)
 
     from highlight_detector import resolve_sync_offset
 
@@ -472,11 +474,11 @@ def main() -> int:
                                   telemetry_source=telemetry_source)
         try:
             print("Intro + eindmontage renderen…", file=sys.stderr)
-            build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)
+            build_final_video(reel, gpx, cfg, output_path, args, offset_seconds=r.offset_used)
         finally:
             import os, shutil
             shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
-        print(f"Wrote {args.output}")
+        print(f"Wrote {output_path}")
         return 0
 
     # flow mode (fallback / --mode flow)
@@ -494,11 +496,11 @@ def main() -> int:
     reel = build_highlight_reel(args.video[0], segments, None, cfg)
     try:
         print("Intro + eindmontage renderen…", file=sys.stderr)
-        build_final_video(reel, gpx, cfg, args.output, args, offset_seconds=r.offset_used)
+        build_final_video(reel, gpx, cfg, output_path, args, offset_seconds=r.offset_used)
     finally:
         import os, shutil
         shutil.rmtree(os.path.dirname(reel), ignore_errors=True)
-    print(f"Wrote {args.output}")
+    print(f"Wrote {output_path}")
     return 0
 
 
