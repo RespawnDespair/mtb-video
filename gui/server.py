@@ -193,10 +193,15 @@ def render(cfg: dict):
         try:
             for line in p.stdout:
                 yield line
-        finally:
             p.wait()
-            _render["proc"] = None
             yield f"\n[exit {p.returncode}]\n"
+        finally:
+            # cleanup only — no yield here, so a client disconnect (GeneratorExit)
+            # can't trigger "generator ignored GeneratorExit".
+            if p.poll() is None:
+                p.terminate()
+                p.wait()
+            _render["proc"] = None
 
     return StreamingResponse(stream(), media_type="text/plain")
 

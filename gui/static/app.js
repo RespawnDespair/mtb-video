@@ -432,6 +432,8 @@
   });
 
   // ---------- init ----------
+  state.offset = +offEl.value;          // keep state in sync with the slider's initial value
+  offvEl.textContent = state.offset;
   renderVideos();
   loadActivities();
   updateCommandPreview();
