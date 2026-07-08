@@ -125,12 +125,6 @@ def _gather_extra_stats(gpx: GpxData, args) -> dict:
             stats.update(get_activity_stats(getattr(args, "strava_activity_id", None)))
         except Exception as e:
             print(f"[warn] Strava stats skipped: {e}")
-    if getattr(args, "garmin", False):
-        try:
-            from garmin_client import get_activity_stats as garmin_stats
-            stats.update(garmin_stats(gpx.start_time))
-        except Exception as e:
-            print(f"[warn] Garmin stats skipped: {e}")
     return stats
 
 

@@ -310,13 +310,6 @@ def test_refresh_if_needed_skips_when_valid(monkeypatch):
     assert out["access_token"] == "ok"
 
 
-def test_garmin_not_configured_by_default(monkeypatch):
-    import garmin_client
-    monkeypatch.delenv("GARMIN_EMAIL", raising=False)
-    monkeypatch.delenv("GARMIN_PASSWORD", raising=False)
-    assert garmin_client.is_configured() is False
-
-
 from highlight_detector import estimate_offset_by_motion, GpxData
 
 
@@ -1083,7 +1076,7 @@ def test_final_video_respects_output_height(tmp_path, monkeypatch):
                 moving_time_s=600.0, first_coord=(52.0, 4.0))
     cfg = Config(); cfg.output_height = 720
     class A:
-        video = str(reel); strava = False; garmin = False
+        video = str(reel); strava = False
     out = tmp_path / "final.mp4"
     intro_generator.build_final_video(str(reel), g, cfg, str(out), A())
     h = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -1458,7 +1451,7 @@ def test_build_final_video_with_music_has_audio(tmp_path, monkeypatch):
                 moving_time_s=600.0, first_coord=(52.0, 4.0), name="Rit")
     cfg = Config(); cfg.intro_duration = 2.0; cfg.intro_fps = 8
     class A:
-        video = str(reel); strava = False; garmin = False; music = str(mdir)
+        video = str(reel); strava = False; music = str(mdir)
     out = tmp_path / "final.mp4"
     intro_generator.build_final_video(str(reel), g, cfg, str(out), A())
     codec = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",

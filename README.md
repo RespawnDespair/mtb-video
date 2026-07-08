@@ -159,15 +159,7 @@ the `speed` and `motion` sparklines (peaks should line up) and set `--sync-offse
 
 Tokens refresh automatically after that. `.strava_token.json` is gitignored.
 
-## Optional: Garmin Connect stats
-
-```bash
-export GARMIN_EMAIL="you@example.com"
-export GARMIN_PASSWORD="your-password"
-python main.py --video ride.mp4 --gpx ride.gpx --garmin
-```
-
-Both integrations are optional and skipped gracefully if unconfigured; API
+Strava enrichment is optional and skipped gracefully if unconfigured; API
 failures log a warning and the pipeline continues with GPX-only stats.
 
 ## Tests

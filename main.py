@@ -166,7 +166,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--score-cutoff", type=float, help="Per-second interest score cutoff.")
     p.add_argument("--strava", action="store_true", help="Enrich intro with Strava stats.")
     p.add_argument("--strava-activity-id", help="Strava activity ID for stats.")
-    p.add_argument("--garmin", action="store_true", help="Enrich intro with Garmin stats.")
     p.add_argument("--inspect", action="store_true",
                    help="Print a sync/segment diagnosis report and render nothing.")
     p.add_argument("--sync-offset", type=float, default=None,
