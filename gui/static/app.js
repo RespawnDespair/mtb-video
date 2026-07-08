@@ -155,10 +155,24 @@
   }
 
   function drawSegs(segments, duration) {
-    segsEl.innerHTML = segments.map(s => {
-      const left = duration ? 100 * s.start / duration : 0;
-      const width = duration ? Math.max(0.3, 100 * (s.end - s.start) / duration) : 0;
-      return `<div class="seg" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"><span>${s.name}</span></div>`;
+    if (!segments.length || !duration) { segsEl.innerHTML = ''; segsEl.style.height = '0px'; return; }
+    // Pack overlapping/nested segments into stacked lanes: sort by start, put each in the
+    // first lane whose last segment ended before this one starts, else open a new lane.
+    const ROW = 20, GAP = 4;
+    const laneEnds = [];               // ride-time end per lane
+    const placed = [...segments].sort((a, b) => a.start - b.start).map(s => {
+      let lane = laneEnds.findIndex(end => s.start >= end);
+      if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+      laneEnds[lane] = s.end;
+      return { s, lane };
+    });
+    segsEl.style.height = (laneEnds.length * (ROW + GAP) - GAP) + 'px';
+    segsEl.innerHTML = placed.map(({ s, lane }) => {
+      const left = 100 * s.start / duration;
+      const width = Math.max(0.6, 100 * (s.end - s.start) / duration);
+      return `<div class="seg" title="${s.n} · ${s.name}" style="left:${left.toFixed(2)}%;` +
+             `width:${width.toFixed(2)}%;top:${lane * (ROW + GAP)}px;height:${ROW}px">` +
+             `<span>${s.n} · ${s.name}</span></div>`;
     }).join('');
   }
 
