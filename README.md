@@ -43,6 +43,9 @@ the audio files back-to-back with short crossfades — folder contents sorted by
 (`.mp3/.m4a/.aac/.wav`) — repeating the list to fill the whole video, and fades out at the
 end. Mixed under the entire video (intro included), with the original audio quiet beneath.
 
+The `music/` folder ships a few sample tracks generated with MusicAPI (user-owned, no
+attribution required — see [`music/CREDITS.md`](music/CREDITS.md)).
+
 ### Multiple video files
 
 `--video` accepts several files that jointly cover one ride:
