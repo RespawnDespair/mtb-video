@@ -6,6 +6,8 @@ finds the good bits, overlays live telemetry, adds an intro and music, and rende
 a shareable reel. Point-and-click GUI or one CLI command. Camera-agnostic
 (Insta360, GoPro, phone — anything).
 
+![A rendered highlight frame: trail footage with the live telemetry HUD — segment name, heart rate, elevation/slope, mini-map, and speedometer](docs/render.png)
+
 ## What it does
 
 - **Finds your highlights** — uses your **Strava segments** (medals / PRs / starred)
