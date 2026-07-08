@@ -1798,3 +1798,86 @@ def test_playlist_bed_single_track_trimmed(tmp_path):
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                                 "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout)
     assert abs(dur - 8.0) < 0.3
+
+
+def test_gather_videos_in_dir_sorted_case_insensitive(tmp_path):
+    import main
+    for n in ["b.mp4", "a.mov", "c.txt", "d.MP4", "notes.md"]:
+        (tmp_path / n).write_bytes(b"x")
+    got = [__import__("os").path.basename(p) for p in main.gather_videos_in_dir(str(tmp_path))]
+    assert got == ["a.mov", "b.mp4", "d.MP4"]
+
+
+def test_resolve_video_inputs_files_and_folder(tmp_path):
+    import main
+    from types import SimpleNamespace
+    (tmp_path / "01.mp4").write_bytes(b"x")
+    (tmp_path / "02.mp4").write_bytes(b"x")
+    f = tmp_path / "solo.mp4"; f.write_bytes(b"x")
+    # explicit file list preserved
+    assert main.resolve_video_inputs(SimpleNamespace(video=[str(f)])) == [str(f)]
+    # folder expanded, sorted
+    got = main.resolve_video_inputs(SimpleNamespace(video=[str(tmp_path)]))
+    assert [__import__("os").path.basename(p) for p in got] == ["01.mp4", "02.mp4", "solo.mp4"]
+
+
+def test_resolve_video_inputs_default_dir(tmp_path, monkeypatch):
+    import main
+    from types import SimpleNamespace
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "video_input").mkdir()
+    (tmp_path / "video_input" / "a.mp4").write_bytes(b"x")
+    got = main.resolve_video_inputs(SimpleNamespace(video=None))
+    assert [__import__("os").path.basename(p) for p in got] == ["a.mp4"]
+
+
+def test_resolve_video_inputs_empty_and_missing_raise(tmp_path):
+    import main, pytest as _pt
+    from types import SimpleNamespace
+    empty = tmp_path / "empty"; empty.mkdir()
+    with _pt.raises(SystemExit):
+        main.resolve_video_inputs(SimpleNamespace(video=[str(empty)]))
+    with _pt.raises(SystemExit):
+        main.resolve_video_inputs(SimpleNamespace(video=[str(tmp_path / "nope.mp4")]))
+
+
+def test_sanitize_filename():
+    import main
+    assert main._sanitize_filename("MTB Goeree Vol Gas!") == "MTB_Goeree_Vol_Gas"
+    assert main._sanitize_filename("a/b:c*d") == "abcd"
+    assert main._sanitize_filename("  ") == ""
+    assert main._sanitize_filename("__x__") == "x"
+
+
+def test_generate_output_name():
+    import main
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    g = SimpleNamespace(name="Stellendam Goeree", start_time=datetime(2026, 7, 5, tzinfo=timezone.utc))
+    assert main.generate_output_name(g) == "Stellendam_Goeree_2026-07-05.mp4"
+    g2 = SimpleNamespace(name=None, start_time=datetime(2026, 7, 5, tzinfo=timezone.utc))
+    assert main.generate_output_name(g2) == "highlight_2026-07-05.mp4"
+
+
+def test_resolve_output_path_variants(tmp_path):
+    import os, main
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    g = SimpleNamespace(name="Rit", start_time=datetime(2026, 7, 5, tzinfo=timezone.utc))
+    odir = tmp_path / "out"
+    # omitted -> generated in output_dir, dir created
+    p = main.resolve_output_path(SimpleNamespace(output=None, output_dir=str(odir)), g)
+    assert p == os.path.join(str(odir), "Rit_2026-07-05.mp4") and odir.is_dir()
+    # bare name -> in output_dir
+    p = main.resolve_output_path(SimpleNamespace(output="ride.mp4", output_dir=str(odir)), g)
+    assert p == os.path.join(str(odir), "ride.mp4")
+    # path with separator -> verbatim
+    vp = tmp_path / "sub" / "x.mp4"
+    p = main.resolve_output_path(SimpleNamespace(output=str(vp), output_dir=str(odir)), g)
+    assert p == str(vp) and vp.parent.is_dir()
+
+
+def test_parser_io_defaults():
+    import main
+    a = main.build_parser().parse_args(["--gpx", "r.gpx"])
+    assert a.video is None and a.output is None and a.output_dir == "video_output"

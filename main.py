@@ -11,6 +11,61 @@ from video_editor import check_ffmpeg
 
 _BLOCKS = "▁▂▃▄▅▆▇█"
 
+_VIDEO_EXTS = (".mp4", ".mov")
+DEFAULT_INPUT_DIR = "video_input"
+
+
+def gather_videos_in_dir(directory):
+    """Video files (.mp4/.mov, case-insensitive) directly in `directory`, sorted."""
+    return sorted(
+        os.path.join(directory, f) for f in os.listdir(directory)
+        if f.lower().endswith(_VIDEO_EXTS))
+
+
+def resolve_video_inputs(args):
+    """Resolve --video (files, folders, or omitted->video_input/) to an ordered list."""
+    paths = args.video or [DEFAULT_INPUT_DIR]
+    videos = []
+    for p in paths:
+        if os.path.isdir(p):
+            videos.extend(gather_videos_in_dir(p))
+        elif os.path.isfile(p):
+            videos.append(p)
+        else:
+            raise SystemExit(f"Video-invoer niet gevonden: {p}")
+    if not videos:
+        raise SystemExit(f"Geen video's (.mp4/.mov) gevonden in: {', '.join(paths)}")
+    return videos
+
+
+def _sanitize_filename(name):
+    """Make a safe filename stem: spaces->_, keep [A-Za-z0-9_-], collapse/trim, cap len."""
+    import re
+    name = re.sub(r"\s+", "_", (name or "").strip())
+    name = re.sub(r"[^A-Za-z0-9_-]", "", name)
+    name = re.sub(r"_+", "_", name).strip("_")
+    return name[:100]
+
+
+def generate_output_name(gpx):
+    """Generated output filename: <sanitised activity name>_YYYY-MM-DD.mp4."""
+    base = _sanitize_filename(getattr(gpx, "name", None) or "") or "highlight"
+    return f"{base}_{gpx.start_time.strftime('%Y-%m-%d')}.mp4"
+
+
+def resolve_output_path(args, gpx):
+    """Resolve the output path: verbatim if --output has a dir, else <output_dir>/<name
+    or generated>. Creates the target folder."""
+    if args.output:
+        path = args.output if os.path.dirname(args.output) \
+            else os.path.join(args.output_dir, args.output)
+    else:
+        path = os.path.join(args.output_dir, generate_output_name(gpx))
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return path
+
 
 def render_sparkline(values, width: int) -> str:
     """Map a numeric series to block characters, bucketed into `width` columns."""
@@ -89,13 +144,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Generate an MTB highlight video from action-cam footage + GPX telemetry."
     )
-    p.add_argument("--video", required=True, nargs="+",
-                   help="One or more source video files that jointly cover the ride.")
+    p.add_argument("--video", nargs="*", default=None,
+                   help="Video files or a folder of videos (.mp4/.mov). "
+                        "Defaults to the video_input/ folder.")
     p.add_argument("--gpx", help="Path to the Strava/Garmin GPX export. If omitted, "
                                  "the track is built from --strava-activity-id.")
     p.add_argument("--music", help="Path to an audio file or a folder of audio files "
                                     "(.mp3/.m4a/.aac/.wav) to play under the video.")
-    p.add_argument("--output", default="highlight.mp4", help="Output video path.")
+    p.add_argument("--output", default=None,
+                   help="Output filename (placed in --output-dir) or a full path. "
+                        "Default: generated from the activity name + date.")
+    p.add_argument("--output-dir", default="video_output",
+                   help="Folder for rendered output (default: video_output).")
     p.add_argument("--output-height", default="1080",
                    help="Output video height in pixels (default 1080), or 'source' to "
                         "match the input. Width follows the source aspect. e.g. 2160 for 4K.")
