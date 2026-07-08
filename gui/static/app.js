@@ -240,9 +240,11 @@
     const coveredN = new Set(parts.map(p => p.n));
     const cards = [
       ...parts.map(p => ({ empty: false, n: p.n, name: p.name, file: p.file, path: p.path,
-                           local: p.local, a0: p.a0, a1: p.a1 })),
-      ...segments.filter(s => !coveredN.has(s.n)).map(s => ({ empty: true, n: s.n, name: s.name })),
-    ].sort((a, b) => (a.n - b.n) || ((a.local || 0) - (b.local || 0)));
+                           local: p.local, a0: p.a0, a1: p.a1, key: p.a0 })),
+      ...segments.filter(s => !coveredN.has(s.n)).map(s => ({ empty: true, n: s.n, name: s.name, key: s.start })),
+    // sort by ride time (a0 for a part, segment start for an uncovered one) so the cards
+    // are in the SAME chronological order the reel is rendered in.
+    ].sort((a, b) => (a.key - b.key) || (a.n - b.n));
     // Rebuild the DOM only when the card STRUCTURE changes (kind/segment/file), not on
     // every offset tick — image sources update in place below.
     const sig = JSON.stringify(cards.map(c => [c.empty ? 'x' : c.file, c.n]));
