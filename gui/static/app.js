@@ -371,7 +371,7 @@
     if (cfg.videos && cfg.videos.length) argv.push('--video', ...cfg.videos);
     if (cfg.gpx) argv.push('--gpx', cfg.gpx);
     if (cfg.strava_activity_id) argv.push('--strava', '--strava-activity-id', cfg.strava_activity_id);
-    if (cfg.sync_offset != null) argv.push('--sync-offset', cfg.sync_offset);
+    if (cfg.sync_offset != null) argv.push('--sync-offset', String(cfg.sync_offset));
     if (cfg.mode) argv.push('--mode', cfg.mode);
     if (cfg.pick) argv.push('--pick', cfg.pick);
     if (cfg.music) argv.push('--music', cfg.music);
@@ -379,7 +379,7 @@
     if (cfg.output_dir) argv.push('--output-dir', cfg.output_dir);
     if (cfg.output) argv.push('--output', cfg.output);
     cmdEl.innerHTML = '<b>' + argv[0] + ' ' + argv[1] + '</b> ' +
-      argv.slice(2).map(a => a.startsWith('--') ? `<span class="flag">${a}</span>` : a).join(' ');
+      argv.slice(2).map(a => String(a).startsWith('--') ? `<span class="flag">${a}</span>` : a).join(' ');
   }
 
   function appendProgress(text) {
