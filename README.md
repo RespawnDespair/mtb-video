@@ -162,6 +162,30 @@ Tokens refresh automatically after that. `.strava_token.json` is gitignored.
 Strava enrichment is optional and skipped gracefully if unconfigured; API
 failures log a warning and the pipeline continues with GPX-only stats.
 
+## GUI
+
+```bash
+python gui.py
+```
+
+This starts a local FastAPI server (127.0.0.1) and opens the Ride Highlight
+Editor in your browser. It's a point-and-click front end over the same
+pipeline as the CLI — the app assembles the equivalent `main.py` command for
+you and streams its output live:
+
+1. **Bronvideo's** — pick a folder or add individual video files.
+2. **Strava-activiteit** — pick a recent ride, or, if Strava isn't
+   configured (see above), pick a GPX file instead.
+3. **Uitlijnen op de track** — drag the shared sync-offset (or click
+   "Auto-uitlijnen") while watching live start-frame previews per segment
+   update against the speed/motion profile.
+4. **Muziek** — pick a music folder; subfolders with tracks show up as
+   selectable chips.
+5. **Output & render** — set the output folder/filename, mode and
+   resolution, pick which segments to include, then **Start render**. The
+   real command and its live output appear at the bottom; **Stop** cancels
+   an in-progress render.
+
 ## Tests
 
 ```bash

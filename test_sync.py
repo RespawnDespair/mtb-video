@@ -1982,3 +1982,15 @@ def test_api_frame_returns_jpeg(tmp_path):
     r = TestClient(srv.app).get("/api/frame", params={"video": str(clip), "t": 1.0, "w": 160})
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     assert r.content[:2] == b"\xff\xd8"  # JPEG SOI
+
+
+@pytest.mark.skipif(_sh6.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_api_render_streams_command_and_exit(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import gui.server as srv
+    # a trivially-failing config (no gpx/video) is fine — we assert streaming + exit line
+    cfg = {"videos": [], "gpx": "", "mode": "flow", "output_dir": str(tmp_path)}
+    with TestClient(srv.app) as c:
+        with c.stream("POST", "/api/render", json=cfg) as r:
+            body = "".join(chunk for chunk in r.iter_text())
+    assert body.startswith("$ ") and "main.py" in body and "[exit" in body

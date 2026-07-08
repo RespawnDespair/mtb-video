@@ -6,8 +6,10 @@ import subprocess
 import sys
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+from gui.render import build_render_argv
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -172,6 +174,40 @@ def auto_align(body: dict):
     flow = compute_optical_flow_per_second(body["video"], cfg)
     off, corr = estimate_offset_by_motion(flow, g, cfg)
     return {"offset": off, "correlation": corr}
+
+
+_render = {"proc": None}
+
+
+@app.post("/api/render")
+def render(cfg: dict):
+    if _render["proc"] and _render["proc"].poll() is None:
+        raise HTTPException(409, "er loopt al een render")
+    argv = build_render_argv(cfg)
+
+    def stream():
+        yield "$ " + " ".join(argv) + "\n"
+        p = subprocess.Popen(argv, cwd=REPO, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+        _render["proc"] = p
+        try:
+            for line in p.stdout:
+                yield line
+        finally:
+            p.wait()
+            _render["proc"] = None
+            yield f"\n[exit {p.returncode}]\n"
+
+    return StreamingResponse(stream(), media_type="text/plain")
+
+
+@app.post("/api/render/stop")
+def render_stop():
+    p = _render["proc"]
+    if p and p.poll() is None:
+        p.terminate()
+        return {"stopped": True}
+    return {"stopped": False}
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
