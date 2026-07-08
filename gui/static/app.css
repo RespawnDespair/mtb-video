@@ -238,6 +238,10 @@
     border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-dim);
   }
   .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .chip.novideo {
+    cursor: not-allowed; opacity: .55; border-style: dashed;
+    color: var(--text-faint); background: transparent;
+  }
 
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   @media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } }

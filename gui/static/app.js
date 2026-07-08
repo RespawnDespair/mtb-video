@@ -189,24 +189,47 @@
     ticksEl.innerHTML = Array.from({ length: n }, (_, i) => `<span>${mmss(duration * i / (n - 1))}</span>`).join('');
   }
 
-  function segChipsHtml(segments) {
-    return segments.map(s => `<span class="chip" aria-pressed="${state.selectedSegs.has(s.n) ? 'true' : 'false'}" data-n="${s.n}">${s.n} · ${s.name}</span>`).join('');
+  // segment numbers currently covered by at least one clip (depends on the offset)
+  function coveredNs() {
+    const { segments = [], clips = [] } = state.timeline || {};
+    const set = new Set();
+    segments.forEach(s => {
+      if (clips.some(c => c.end > s.start && c.start < s.end)) set.add(s.n);
+    });
+    return set;
+  }
+
+  function segChipsHtml(segments, covered) {
+    return segments.map(s => {
+      const cov = covered.has(s.n);
+      const pressed = cov && state.selectedSegs.has(s.n);
+      return `<span class="chip${cov ? '' : ' novideo'}" data-n="${s.n}" ` +
+        `aria-pressed="${pressed ? 'true' : 'false'}"${cov ? '' : ' aria-disabled="true"'}>` +
+        `${s.n} · ${s.name}${cov ? '' : ' · geen video'}</span>`;
+    }).join('');
   }
 
   function drawSegChips(segments) {
-    if (!segments.length) { segchipsEl.innerHTML = ''; return; }
-    // default: select all on first render of a new segment set
-    const known = new Set(segments.map(s => s.n));
-    if ([...state.selectedSegs].some(n => !known.has(n)) || state.selectedSegs.size === 0) {
-      state.selectedSegs = new Set(segments.map(s => s.n));
+    if (!segments.length) { segchipsEl.innerHTML = ''; segchipsEl.dataset.set = ''; return; }
+    const covered = coveredNs();
+    // On a genuinely NEW segment set, default-select only the covered segments (uncovered
+    // ones start off — they have no footage). A plain drag/offset change keeps the user's
+    // choices; coverage is re-applied via the effective pick (buildConfig) each time.
+    const sig = JSON.stringify(segments.map(s => s.n).sort((a, b) => a - b));
+    if (segchipsEl.dataset.set !== sig) {
+      state.selectedSegs = new Set([...covered]);
+      segchipsEl.dataset.set = sig;
     }
-    segchipsEl.innerHTML = segChipsHtml(segments);
-    segchipsEl.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
-      const n = +c.dataset.n;
-      if (state.selectedSegs.has(n)) state.selectedSegs.delete(n); else state.selectedSegs.add(n);
-      c.setAttribute('aria-pressed', state.selectedSegs.has(n) ? 'true' : 'false');
-      updateCommandPreview();
-    }));
+    segchipsEl.innerHTML = segChipsHtml(segments, covered);
+    segchipsEl.querySelectorAll('.chip').forEach(c => {
+      if (c.classList.contains('novideo')) return;   // uncovered: not selectable
+      c.addEventListener('click', () => {
+        const n = +c.dataset.n;
+        if (state.selectedSegs.has(n)) state.selectedSegs.delete(n); else state.selectedSegs.add(n);
+        c.setAttribute('aria-pressed', state.selectedSegs.has(n) ? 'true' : 'false');
+        updateCommandPreview();
+      });
+    });
   }
 
   function updateFrames() {
@@ -370,8 +393,11 @@
     if (state.activity) cfg.strava_activity_id = state.activity.id;
     else if (state.gpx) cfg.gpx = state.gpx;
     if (state.offset) cfg.sync_offset = state.offset;
-    if (state.mode === 'segments' && state.selectedSegs.size) {
-      cfg.pick = [...state.selectedSegs].sort((a, b) => a - b).join(',');
+    if (state.mode === 'segments') {
+      // effective pick = selected AND actually covered by footage
+      const covered = coveredNs();
+      const pick = [...state.selectedSegs].filter(n => covered.has(n)).sort((a, b) => a - b);
+      if (pick.length) cfg.pick = pick.join(',');
     }
     if (state.music) cfg.music = state.music;
     const name = outnameEl.value.trim() || outnameEl.placeholder;
