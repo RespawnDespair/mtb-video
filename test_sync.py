@@ -2058,3 +2058,11 @@ def test_api_track_returns_coords(monkeypatch):
     assert calls["n"] == 1
     # segment-map endpoint is gone
     assert c.get("/api/segment-map", params={"activity_id": "88", "a0": 0, "a1": 9}).status_code == 404
+
+
+def test_minimap_project_golden():
+    from minimap import compute_bounds, project
+    coords = [(52.0, 4.0), (52.01, 4.02), (52.005, 4.03)]
+    b = compute_bounds(coords)
+    got = [[round(v, 3) for v in project(la, lo, b, 240, 150, 14)] for la, lo in coords]
+    assert got == [[14.0, 132.397], [155.333, 17.603], [226.0, 75.0]]

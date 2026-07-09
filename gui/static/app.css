@@ -233,7 +233,7 @@
   .frame .segmap { width:min(34vw,260px); flex:none; border-left:1px solid var(--border);
     background:color-mix(in srgb, var(--track) 7%, var(--surface));
     display:flex; align-items:center; justify-content:center; }
-  .frame .segmap img { width:100%; height:100%; object-fit:contain; display:block; }
+  .frame .segmap svg { width:100%; height:100%; display:block; }
   .frame.empty .segmap { display:none; }
   @media (max-width: 720px) {
     .frame { flex-direction:column; }

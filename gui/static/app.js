@@ -8,6 +8,8 @@
     gpx: null,             // path string when using a GPX file instead of Strava
     offset: 0,
     timeline: { duration: 0, speed: [], segments: [], clips: [] },
+    coords: [],            // Array<[lat, lon]> for the current source ([] when none)
+    coordsKey: '',
     selectedSegs: new Set(),
     music: '',             // selected music folder path ('' = geen muziek)
     mode: 'segments',
@@ -46,6 +48,59 @@
       if (now - last >= ms) { last = now; fn(...args); }
       else { clearTimeout(pending); pending = setTimeout(() => { last = Date.now(); fn(...args); }, ms - (now - last)); }
     };
+  }
+
+  // ---------- minimap projection (port of minimap.project) ----------
+  function computeBounds(coords) {
+    let mnla = Infinity, mxla = -Infinity, mnlo = Infinity, mxlo = -Infinity, sum = 0;
+    for (const [la, lo] of coords) {
+      if (la < mnla) mnla = la; if (la > mxla) mxla = la;
+      if (lo < mnlo) mnlo = lo; if (lo > mxlo) mxlo = lo; sum += la;
+    }
+    return { mnla, mxla, mnlo, mxlo, mean: sum / coords.length };
+  }
+  function project(la, lo, b, w, h, pad) {
+    const cos = Math.cos(b.mean * Math.PI / 180);
+    const spanx = (b.mxlo - b.mnlo) * cos, spany = (b.mxla - b.mnla);
+    const iw = w - 2 * pad, ih = h - 2 * pad;
+    if (spanx < 1e-12 && spany < 1e-12) return [w / 2, h / 2];
+    const scale = Math.min(spanx > 1e-12 ? iw / spanx : Infinity,
+                           spany > 1e-12 ? ih / spany : Infinity);
+    const dw = spanx * scale, dh = spany * scale;
+    const ox = pad + (iw - dw) / 2, oy = pad + (ih - dh) / 2;
+    return [ox + ((lo - b.mnlo) * cos) * scale, oy + (b.mxla - la) * scale];
+  }
+  function projectAll(coords, w, h, pad) {
+    if (coords.length < 2) return [];
+    const b = computeBounds(coords);
+    return coords.map(([la, lo]) => project(la, lo, b, w, h, pad));
+  }
+  // Track colours match minimap.py: track green line, orange start, green end.
+  function mapSVG(coords, w, h) {
+    const pad = 14;
+    const P = projectAll(coords, w, h, pad);
+    if (P.length < 2) return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet"></svg>`;
+    const poly = P.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const s = P[0], e = P[P.length - 1];
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">` +
+      `<polyline points="${poly}" fill="none" stroke="var(--track)" stroke-width="2.4" ` +
+      `stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>` +
+      `<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="3.5" fill="var(--track)"/>` +
+      `<circle cx="${s[0].toFixed(1)}" cy="${s[1].toFixed(1)}" r="4" fill="var(--accent)"/>` +
+      `<circle class="doth" r="6.5" fill="none" stroke="var(--accent)" stroke-width="2" opacity=".5" style="display:none">` +
+      `<animate attributeName="r" values="6.5;12;6.5" dur="1.6s" repeatCount="indefinite"/></circle>` +
+      `<circle class="dot" r="6.5" fill="var(--accent)" stroke="#fff" stroke-width="2" style="display:none"/></svg>`;
+  }
+  function setDot(svgEl, coords, w, h, idx) {
+    const dot = svgEl.querySelector('.dot'), halo = svgEl.querySelector('.doth');
+    if (!dot) return;
+    const i = Math.round(idx);
+    if (i < 0 || i >= coords.length || coords.length < 2) {
+      dot.style.display = 'none'; if (halo) halo.style.display = 'none'; return;
+    }
+    const [x, y] = project(coords[i][0], coords[i][1], computeBounds(coords), w, h, 14);
+    dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1)); dot.style.display = '';
+    if (halo) { halo.setAttribute('cx', x.toFixed(1)); halo.setAttribute('cy', y.toFixed(1)); halo.style.display = ''; }
   }
 
   // ---------- 1. videos ----------
@@ -252,19 +307,17 @@
       framesEl.innerHTML = cards.map((c, i) => `
         <div class="frame${c.empty ? ' empty' : ''}" id="fr${i}">
           <div class="thumb"><img class="tcimg" style="width:100%;height:100%;object-fit:cover;display:none"><span class="tc">${c.empty ? 'geen beeld' : '–'}</span></div>
-          <div class="segmap"><img class="mapimg" alt="segment-track"></div>
+          <div class="segmap"></div>
           <div class="cap"><b>${c.n} · ${c.name}</b><span class="file">${c.empty ? 'geen beeld — clip dekt dit segment niet' : '—'}</span></div>
         </div>`).join('');
       framesEl.dataset.built = sig;
     }
-    const trackParam = state.activity ? `activity_id=${state.activity.id}`
-      : (state.gpx ? `gpx=${encodeURIComponent(state.gpx)}` : '');
     cards.forEach((c, i) => {
       if (c.empty) return;
       const wrap = el('fr' + i);
       if (!wrap) return;
       const tc = wrap.querySelector('.tc'), img = wrap.querySelector('.tcimg');
-      const mapimg = wrap.querySelector('.mapimg'), file = wrap.querySelector('.file');
+      const segmap = wrap.querySelector('.segmap'), file = wrap.querySelector('.file');
       file.textContent = `${c.file} @ ${mmss(c.local)}`;
       const src = `/api/frame?video=${encodeURIComponent(c.path)}&t=${c.local}&w=320`;
       if (img.dataset.src !== src) {
@@ -273,15 +326,30 @@
         img.onerror = () => { img.style.display = 'none'; tc.style.display = ''; tc.textContent = 'geen beeld'; };
         img.src = src;
       }
-      // GPS track of this part's covered window — same coords/projection as the render.
-      const msrc = `/api/segment-map?${trackParam}&a0=${Math.round(c.a0)}&a1=${Math.round(c.a1)}`;
-      if (trackParam && mapimg.dataset.src !== msrc) {
-        mapimg.dataset.src = msrc;
-        mapimg.src = msrc;
+      // GPS track of this part's window [a0, a1], rendered client-side (same projection as the HUD).
+      const a0 = Math.round(c.a0), a1 = Math.round(c.a1);
+      const sub = state.coords.slice(a0, a1 + 1);
+      if (segmap.dataset.range !== a0 + '-' + a1) {
+        segmap.innerHTML = sub.length >= 2 ? mapSVG(sub, 230, 150) : '';
+        segmap.dataset.range = a0 + '-' + a1;
       }
     });
   }
   const updateFramesThrottled = throttle(updateFrames, 150);
+
+  async function loadTrack() {
+    const key = state.activity ? 'a:' + state.activity.id : (state.gpx ? 'g:' + state.gpx : '');
+    if (!key || key === state.coordsKey) return;
+    const params = new URLSearchParams();
+    if (state.activity) params.set('activity_id', state.activity.id);
+    if (state.gpx) params.set('gpx', state.gpx);
+    try {
+      const r = await fetch('/api/track?' + params.toString());
+      if (!r.ok) return;
+      state.coords = (await r.json()).coords || [];
+      state.coordsKey = key;
+    } catch (e) { /* leave coords empty; minimaps just won't render */ }
+  }
 
   async function fetchTimeline() {
     if (!state.videos.length && !state.activity && !state.gpx) return;
@@ -292,6 +360,7 @@
     params.set('videos', state.videos.map(v => v.path).join('|'));
     if (!state.activity && !state.gpx) return;
     try {
+      await loadTrack();
       const r = await fetch('/api/timeline?' + params.toString());
       if (!r.ok) return;
       const j = await r.json();
