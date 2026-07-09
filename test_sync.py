@@ -2030,7 +2030,7 @@ def test_save_token_atomic(tmp_path, monkeypatch):
     assert not (tmp_path / ".strava_token.json.tmp").exists()   # temp cleaned via os.replace
 
 
-def test_api_segment_map_returns_png(monkeypatch):
+def test_api_track_returns_coords(monkeypatch):
     from datetime import datetime, timezone
     from fastapi.testclient import TestClient
     import gui.server as srv
@@ -2040,8 +2040,21 @@ def test_api_segment_map_returns_png(monkeypatch):
                 coords=coords, elevations_m=[5] * 400, hr_bpm=[100] * 400,
                 cum_distance_m=list(range(400)), total_distance_km=5.0, elevation_gain_m=20.0,
                 moving_time_s=400.0, first_coord=coords[0], name="Rit")
-    monkeypatch.setattr("strava_gpx.gpx_from_strava", lambda i: g)
+    calls = {"n": 0}
+
+    def fake(i):
+        calls["n"] += 1
+        return g
+    monkeypatch.setattr("strava_gpx.gpx_from_strava", fake)
     srv._gpx_cache.clear()
-    r = TestClient(srv.app).get("/api/segment-map", params={"activity_id": "88", "a0": 50, "a1": 200})
-    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
-    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"     # PNG signature
+    c = TestClient(srv.app)
+    r = c.get("/api/track", params={"activity_id": "88"})
+    assert r.status_code == 200
+    j = r.json()
+    assert len(j["coords"]) == 400
+    assert j["coords"][0] == [52.0, 4.0]
+    # second call hits the gpx cache (no rebuild)
+    c.get("/api/track", params={"activity_id": "88"})
+    assert calls["n"] == 1
+    # segment-map endpoint is gone
+    assert c.get("/api/segment-map", params={"activity_id": "88", "a0": 0, "a1": 9}).status_code == 404

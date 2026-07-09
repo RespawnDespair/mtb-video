@@ -128,32 +128,13 @@ def _gpx_cached(activity_id, gpx):
     return _gpx_cache[key]
 
 
-@app.get("/api/segment-map")
-def segment_map(activity_id: str = None, gpx: str = None, a0: float = 0.0, a1: float = 0.0,
-                w: int = 360, h: int = 200):
-    """Render the GPS track of a segment's covered activity-time window [a0, a1] — the same
-    coords/projection the HUD minimap uses — as a transparent PNG."""
-    import io
-    from PIL import Image, ImageDraw
-    from minimap import compute_bounds, project
+@app.get("/api/track")
+def track(activity_id: str = None, gpx: str = None):
+    """Ride coordinates as JSON, indexed by activity-second (coords[i] = second i).
+    The client projects these (a JS port of minimap.project) and draws the minimap
+    SVGs + the scrub dot, so scrubbing needs no per-tick server round-trip."""
     g = _gpx_cached(activity_id, gpx)
-    coords = g.coords or []
-    lo = int(max(0, min(a0, a1)))
-    hi = int(min(len(coords) - 1, max(a0, a1)))
-    seg = coords[lo:hi + 1] if coords else []
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    if len(seg) >= 2:
-        pad = 16
-        bounds = compute_bounds(seg)
-        pts = [project(la, lo2, bounds, w, h, pad) for la, lo2 in seg]
-        d.line(pts, fill=(62, 142, 82, 255), width=3, joint="curve")
-        sx, sy = pts[0]; ex, ey = pts[-1]
-        d.ellipse([ex - 4, ey - 4, ex + 4, ey + 4], fill=(62, 142, 82, 255))     # end
-        d.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], fill=(210, 92, 36, 255))     # start (accent)
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    return Response(buf.getvalue(), media_type="image/png")
+    return {"coords": [[la, lo] for la, lo in (g.coords or [])]}
 
 
 _timeline_cache: dict = {}
