@@ -17,6 +17,17 @@ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app = FastAPI(title="Ride Highlight Editor")
 
 
+@app.middleware("http")
+async def _no_cache_static(request, call_next):
+    # Local single-user dev tool: always serve the latest HTML/JS/CSS so a
+    # `python gui.py` restart never shows a stale cached frontend. Payload is
+    # tiny and localhost-only, so disabling the browser cache costs nothing.
+    resp = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
