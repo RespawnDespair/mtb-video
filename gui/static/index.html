@@ -68,13 +68,19 @@
             <span class="corr" id="corr" style="display:none"><span class="pip"></span>correlatie <b id="corrval">–</b> · <span id="corrlabel"></span></span>
           </div>
 
-          <div class="timeline">
+          <div class="timeline" id="timeline">
             <div class="tl-chart" id="chart">
               <svg id="spark" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true"></svg>
             </div>
             <div class="tl-segs" id="segs"></div>
             <div class="clips-lane" id="lane"></div>
             <div class="ticks" id="ticks"><span>0:00</span></div>
+            <div class="ph" id="ph" style="display:none">
+              <div class="ttime" id="phtime">0:00</div>
+              <div class="line"></div>
+              <div class="head" id="phhead" tabindex="0" role="slider"
+                   aria-label="playhead ritmoment" aria-valuemin="0" aria-valuenow="0"></div>
+            </div>
           </div>
 
           <p class="tl-note">De offset geldt gedeeld voor alle clips (zelfde camera). Bestand A is verankerd; B volgt via zijn opnametijd. <b>Groen</b> = snelheid/beweging uit de rit; <b>oranje</b> = jouw videoclips.</p>

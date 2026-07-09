@@ -7,6 +7,7 @@
     activity: null,       // {id,name,date}
     gpx: null,             // path string when using a GPX file instead of Strava
     offset: 0,
+    playhead: null,
     timeline: { duration: 0, speed: [], segments: [], clips: [] },
     coords: [],            // Array<[lat, lon]> for the current source ([] when none)
     coordsKey: '',
@@ -25,6 +26,8 @@
   const actsEl = el('acts'), noticeEl = el('notice'), noticetextEl = el('noticetext');
   const offEl = el('off'), offvEl = el('offv');
   const chartEl = el('chart'), segsEl = el('segs'), sparkEl = el('spark'), laneEl = el('lane'), ticksEl = el('ticks');
+  const timelineEl = el('timeline');
+  const phEl = el('ph'), phtimeEl = el('phtime'), phheadEl = el('phhead');
   const framesEl = el('frames');
   const corrEl = el('corr'), corrvalEl = el('corrval'), corrlabelEl = el('corrlabel');
   const musicchipsEl = el('musicchips');
@@ -369,6 +372,7 @@
       drawSegs(j.segments || [], j.duration || 0);
       drawClips(j.clips || [], j.duration || 0);
       drawTicks(j.duration || 0);
+      if (state.playhead != null) setPlayhead(state.playhead); else phEl.style.display = 'none';
       drawSegChips(j.segments || []);
       updateFramesThrottled();
       updateCommandPreview();
@@ -415,6 +419,46 @@
       btn.innerHTML = prevHtml; btn.disabled = false;
     }
   });
+
+  // ---------- playhead (scrub the timeline) ----------
+  function onPlayheadChange() { /* filled in Task 4 */ }
+
+  function setPlayhead(t) {
+    const dur = state.timeline.duration || 0;
+    if (!dur) { phEl.style.display = 'none'; state.playhead = null; return; }
+    t = Math.max(0, Math.min(dur, Math.round(t)));
+    state.playhead = t;
+    phEl.style.display = '';
+    phEl.style.left = (100 * t / dur) + '%';
+    phtimeEl.textContent = mmss(t);
+    phheadEl.setAttribute('aria-valuenow', t);
+    phheadEl.setAttribute('aria-valuemax', dur);
+    onPlayheadChange();
+  }
+
+  (function wirePlayhead() {
+    let dragging = false;
+    const tToClient = (clientX) => {
+      const r = timelineEl.getBoundingClientRect();
+      return (clientX - r.left) / r.width * (state.timeline.duration || 0);
+    };
+    timelineEl.addEventListener('pointerdown', (e) => {
+      if (!state.timeline.duration) return;
+      dragging = true; timelineEl.setPointerCapture(e.pointerId);
+      setPlayhead(tToClient(e.clientX));
+    });
+    timelineEl.addEventListener('pointermove', (e) => { if (dragging) setPlayhead(tToClient(e.clientX)); });
+    timelineEl.addEventListener('pointerup', () => { dragging = false; });
+    timelineEl.addEventListener('pointercancel', () => { dragging = false; });
+    phheadEl.addEventListener('keydown', (e) => {
+      if (state.playhead == null) return;
+      const step = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); setPlayhead(state.playhead - step); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); setPlayhead(state.playhead + step); }
+      else if (e.key === 'Home') { e.preventDefault(); setPlayhead(0); }
+      else if (e.key === 'End') { e.preventDefault(); setPlayhead(state.timeline.duration); }
+    });
+  })();
 
   function onActivityChanged() {
     outnameEl.placeholder = state.activity ? `${slug(state.activity.name)}_${state.activity.date}.mp4` : 'output.mp4';
