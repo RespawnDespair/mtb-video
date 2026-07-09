@@ -28,6 +28,7 @@
   const chartEl = el('chart'), segsEl = el('segs'), sparkEl = el('spark'), laneEl = el('lane'), ticksEl = el('ticks');
   const timelineEl = el('timeline');
   const phEl = el('ph'), phtimeEl = el('phtime'), phheadEl = el('phhead');
+  const scrubEl = el('scrub'), povimgEl = el('povimg'), povtcEl = el('povtc'), scrubmapEl = el('scrubmap'), scrubrtEl = el('scrubrt'), scrubsubEl = el('scrubsub'), scrubcamEl = el('scrubcam');
   const framesEl = el('frames');
   const corrEl = el('corr'), corrvalEl = el('corrval'), corrlabelEl = el('corrlabel');
   const musicchipsEl = el('musicchips');
@@ -337,6 +338,7 @@
         segmap.dataset.range = a0 + '-' + a1;
       }
     });
+    updateCardDots();
   }
   const updateFramesThrottled = throttle(updateFrames, 150);
 
@@ -421,7 +423,73 @@
   });
 
   // ---------- playhead (scrub the timeline) ----------
-  function onPlayheadChange() { /* filled in Task 4 */ }
+  let _scrubMapRange = '';
+  function fetchPovFrame(video, tLocal) {
+    const src = `/api/frame?video=${encodeURIComponent(video)}&t=${tLocal}&w=480`;
+    if (povimgEl.dataset.src === src) return;
+    povimgEl.dataset.src = src;
+    povimgEl.onload = () => { povimgEl.style.display = ''; povimgEl.parentElement.classList.remove('empty'); };
+    povimgEl.onerror = () => { povimgEl.style.display = 'none'; povimgEl.parentElement.classList.add('empty'); };
+    povimgEl.src = src;
+  }
+  const fetchPovFrameThrottled = throttle(fetchPovFrame, 150);
+
+  function renderScrub() {
+    const t = state.playhead;
+    const { duration = 0, segments = [], clips = [], parts = [] } = state.timeline || {};
+    if (t == null || !duration) { scrubEl.style.display = 'none'; return; }
+    scrubEl.style.display = '';
+    scrubrtEl.textContent = mmss(t);
+    // frame: first clip covering ride-time t; local video time = t - clip.base
+    const clip = clips.find(c => t >= c.start && t < c.end);
+    const pane = povimgEl.parentElement;
+    if (clip) {
+      const local = t - clip.start;   // clip.start == base for the shared offset
+      fetchPovFrameThrottled(clip.path, local);
+      povtcEl.textContent = mmss(local);
+      scrubcamEl.textContent = clip.file;
+      scrubsubEl.innerHTML = `frame <b>${mmss(local)}</b> uit <b>${clip.file}</b>`;
+    } else {
+      povimgEl.style.display = 'none'; pane.classList.add('empty');
+      povimgEl.dataset.src = ''; povtcEl.textContent = '–';
+      scrubsubEl.textContent = 'geen clip dekt dit ritmoment';
+    }
+    // minimap: crop to the active segment, else whole ride
+    const seg = segments.find(s => t >= s.start && t <= s.end);
+    const a0 = seg ? Math.round(seg.start) : 0;
+    const a1 = seg ? Math.round(seg.end) : (state.coords.length - 1);
+    const key = a0 + '-' + a1;
+    const sub = state.coords.slice(a0, a1 + 1);
+    if (_scrubMapRange !== key) {
+      scrubmapEl.innerHTML = sub.length >= 2 ? mapSVG(sub, 280, 200) : '';
+      _scrubMapRange = key;
+    }
+    const svg = scrubmapEl.querySelector('svg');
+    if (svg && sub.length >= 2) setDot(svg, sub, 280, 200, t - a0);
+    // dots on the segment cards + active highlight
+    parts.forEach((p, i) => { /* handled by updateCardDots below */ });
+    updateCardDots();
+  }
+  function onPlayheadChange() { renderScrub(); }
+
+  function updateCardDots() {
+    const t = state.playhead;
+    const { parts = [] } = state.timeline || {};
+    // Cards are ordered by the same sort updateFrames uses; re-derive each card's range from its DOM.
+    document.querySelectorAll('#frames .frame').forEach(fr => {
+      const segmap = fr.querySelector('.segmap');
+      const svg = segmap && segmap.querySelector('svg');
+      const range = segmap && segmap.dataset.range;
+      if (!svg || !range) return;
+      const [a0, a1] = range.split('-').map(Number);
+      const sub = state.coords.slice(a0, a1 + 1);
+      const inside = t != null && t >= a0 && t <= a1 && sub.length >= 2;
+      fr.classList.toggle('active', !!inside);
+      if (inside) setDot(svg, sub, 230, 150, t - a0);
+      else { const d = svg.querySelector('.dot'), h = svg.querySelector('.doth');
+             if (d) d.style.display = 'none'; if (h) h.style.display = 'none'; }
+    });
+  }
 
   function setPlayhead(t) {
     const dur = state.timeline.duration || 0;
