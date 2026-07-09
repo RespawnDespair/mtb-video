@@ -430,7 +430,9 @@
     const src = `/api/frame?video=${encodeURIComponent(video)}&t=${tLocal}&w=480`;
     if (povimgEl.dataset.src === src) return;
     povimgEl.dataset.src = src;
-    povimgEl.onload = () => { povimgEl.style.display = ''; povimgEl.parentElement.classList.remove('empty'); };
+    // explicit 'block' — the hidden state lives in a CSS rule (.scrub .pane .povimg),
+    // so clearing the inline style to '' would fall back to that display:none.
+    povimgEl.onload = () => { povimgEl.style.display = 'block'; povimgEl.parentElement.classList.remove('empty'); };
     povimgEl.onerror = () => { povimgEl.style.display = 'none'; povimgEl.parentElement.classList.add('empty'); };
     povimgEl.src = src;
   }
