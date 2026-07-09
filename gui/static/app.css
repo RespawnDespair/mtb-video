@@ -273,8 +273,7 @@
   .frames-head .live .pip { width:7px; height:7px; border-radius:50%; background:var(--track); }
   .frames { display:flex; flex-direction:column; gap:10px; }
   .frame { display:flex; align-items:stretch; border:1px solid var(--border); border-radius:9px;
-    overflow:hidden; background:var(--surface-2); }
-  .frame { transition: border-color .12s ease; }
+    overflow:hidden; background:var(--surface-2); transition: border-color .12s ease; }
   .frame.active { border-color:var(--accent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
   .frame .thumb { position:relative; width:min(44vw,340px); aspect-ratio:16/9; flex:none; }

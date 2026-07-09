@@ -336,6 +336,8 @@
       if (segmap.dataset.range !== a0 + '-' + a1) {
         segmap.innerHTML = sub.length >= 2 ? mapSVG(sub, 230, 150) : '';
         segmap.dataset.range = a0 + '-' + a1;
+        segmap.dataset.a0 = a0;
+        segmap.dataset.a1 = a1;
       }
     });
     updateCardDots();
@@ -436,7 +438,7 @@
 
   function renderScrub() {
     const t = state.playhead;
-    const { duration = 0, segments = [], clips = [], parts = [] } = state.timeline || {};
+    const { duration = 0, segments = [], clips = [] } = state.timeline || {};
     if (t == null || !duration) { scrubEl.style.display = 'none'; return; }
     scrubEl.style.display = '';
     scrubrtEl.textContent = mmss(t);
@@ -467,7 +469,6 @@
     const svg = scrubmapEl.querySelector('svg');
     if (svg && sub.length >= 2) setDot(svg, sub, 280, 200, t - a0);
     // dots on the segment cards + active highlight
-    parts.forEach((p, i) => { /* handled by updateCardDots below */ });
     updateCardDots();
   }
   function onPlayheadChange() { renderScrub(); }
@@ -479,9 +480,9 @@
     document.querySelectorAll('#frames .frame').forEach(fr => {
       const segmap = fr.querySelector('.segmap');
       const svg = segmap && segmap.querySelector('svg');
-      const range = segmap && segmap.dataset.range;
-      if (!svg || !range) return;
-      const [a0, a1] = range.split('-').map(Number);
+      const a0 = segmap && Number(segmap.dataset.a0);
+      const a1 = segmap && Number(segmap.dataset.a1);
+      if (!svg || a0 == null || a1 == null || Number.isNaN(a0) || Number.isNaN(a1)) return;
       const sub = state.coords.slice(a0, a1 + 1);
       const inside = t != null && t >= a0 && t <= a1 && sub.length >= 2;
       fr.classList.toggle('active', !!inside);
