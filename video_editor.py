@@ -172,7 +172,8 @@ def _render_hud_pngs(video_path, clip, source, gpx, offset_seconds, workdir, cfg
         activity_t = t_video + offset_seconds
         sample = sample_telemetry(source, activity_t, seg_start_activity)
         frame = hud_renderer.render_hud_frame(
-            sample, clip.name, seg_coords, (W, H), cfg, date_str)
+            sample, clip.name, seg_coords, (W, H), cfg, date_str,
+            hr_window=_hr_window(source, seg_start_activity, activity_t))
         frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
         if i % 5 == 0 or i == n_frames - 1:
             _log(f"\r        frames {i + 1}/{n_frames} ({(i + 1) * 100 // n_frames}%)", end="")
@@ -186,6 +187,17 @@ def _segment_coords(gpx, clip, offset_seconds):
     a1 = int(min(len(gpx.coords) - 1, clip.end + offset_seconds))
     pts = gpx.coords[a0:a1 + 1]
     return pts if len(pts) >= 2 else gpx.coords[:2] or [(0.0, 0.0), (0.0, 0.0)]
+
+
+def _hr_window(source, seg_start_activity, activity_t):
+    """Per-second HR values across the segment up to the current moment, for the
+    HUD sparkline. Returns None when the source has no heart-rate data."""
+    hr = getattr(source, "hr_bpm", None) or []
+    if not any(h is not None for h in hr):
+        return None
+    a0 = max(0, int(seg_start_activity))
+    a1 = min(len(hr), int(activity_t) + 1)
+    return hr[a0:a1]
 
 
 def build_segment_reel(video_path, clips, music_path, cfg: Config,
@@ -256,7 +268,9 @@ def _render_hud_pngs_for_part(part, source, gpx, target_size, workdir, cfg, part
     for i in range(n_frames):
         activity_t = clip.start + (i / cfg.hud_fps) + part.base_offset
         sample = sample_telemetry(source, activity_t, seg_start_activity)
-        frame = hud_renderer.render_hud_frame(sample, clip.name, seg_coords, (W, H), cfg, date_str)
+        frame = hud_renderer.render_hud_frame(
+            sample, clip.name, seg_coords, (W, H), cfg, date_str,
+            hr_window=_hr_window(source, seg_start_activity, activity_t))
         frame.save(os.path.join(hud_dir, f"hud_{i:06d}.png"))
     return os.path.join(hud_dir, "hud_%06d.png")
 
