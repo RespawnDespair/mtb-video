@@ -22,8 +22,10 @@ a shareable reel. Point-and-click GUI or one CLI command. Camera-agnostic
 - **Multiple clips, one ride** — hand it several video files that jointly cover the
   ride; each is placed on the timeline by its own recording time and only the parts
   you actually filmed get rendered.
-- **Visual alignment GUI** — drag the sync-offset and watch, per segment, the **start
-  frame** and the **GPS track** update live so you can line footage up to the ride.
+- **Visual alignment GUI** — drag the sync-offset, then **scrub the timeline** to preview
+  the exact video **frame** at any ride-moment beside a **mini-map with a live position
+  dot** — line a corner or climb up in-frame with the dot to nail the offset. Per-segment
+  start frames and GPS tracks update live too.
 - **Sensible defaults** — clips in `video_input/`, renders to `video_output/`, and
   output files auto-named `<activity>_<date>.mp4`.
 
@@ -64,8 +66,11 @@ the equivalent `main.py` command for you and streams the render live:
 
 1. **Source videos** — pick a folder or add individual files (native file dialog).
 2. **Strava activity** — pick a recent ride; or, if Strava isn't set up, choose a GPX file.
-3. **Align to the track** — drag the shared sync-offset (or hit **Auto-align**) and watch,
-   per segment, the start frame and GPS track update against the ride's speed profile.
+3. **Align to the track** — drag the shared sync-offset (or hit **Auto-align**), then
+   **scrub the timeline** (click/drag, or arrow keys — Shift for ±10 s) to see the video
+   frame at that ride-moment next to a mini-map whose dot marks where you were; line a
+   corner up in-frame with the dot. Per-segment start frames and GPS tracks update against
+   the ride's speed profile too.
 4. **Music** — pick a music folder; sub-folders with tracks appear as chips.
 5. **Output & render** — set folder/filename, mode, resolution, choose which segments to
    include, and hit **Start render**. The exact command and its live output show at the
@@ -167,7 +172,8 @@ python main.py --video ride.mp4 --gpx ride.gpx --sync-offset 137.5
 ```
 
 Precedence: `--sync-offset` > `--auto-sync` > file timestamp. The GUI's alignment view is
-the visual version of this — drag until the start frames match where you expect to be.
+the visual version of this — scrub the timeline and drag the offset until the frame at a
+corner or climb lines up with the dot on the mini-map.
 
 ## Optional: Strava
 
